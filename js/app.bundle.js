@@ -5047,7 +5047,7 @@ async function loadAll() {
     APP.library = r || { words: [], readings: [], updatedAt: 0 };
   } catch (e) {
     console.warn('[loadAll] 词库加载失败（超时或网络不可达）:', e && e.message);
-    APP.library = { words: [], readings: [], updatedAt: 0 };
+    APP.library = (typeof EMBEDDED_LIBRARY !== 'undefined' && EMBEDDED_LIBRARY.words.length) ? EMBEDDED_LIBRARY : { words: [], readings: [], updatedAt: 0 };
     _libFailed = true;
   }
   // 用户进度：优先后端，其次本地
