@@ -4974,6 +4974,11 @@ const APP = {
 
 /* ---------- 持久化 ---------- */
 const SAVE_KEY = 'happy-vocab-progress-v1';
+function currentSaveKey() {
+  const cid = String(APP && APP.clientId ? APP.clientId : 'default');
+  if (cid.startsWith('local:')) return SAVE_KEY + '-' + cid.slice(6);
+  return SAVE_KEY;
+}
 
 function defaultProgress() {
   return {
@@ -5007,7 +5012,7 @@ function todayStr() { const d = new Date(); return d.getFullYear() + '-' + (d.ge
 // 安全解析 localStorage 进度：任何损坏/非法 JSON 都返回 null，绝不抛错
 function safeParseProgress() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(currentSaveKey());
     if (!raw) return null;
     const v = JSON.parse(raw);
     return (v && typeof v === 'object') ? v : null;
@@ -5048,7 +5053,7 @@ async function loadAll() {
   } catch (e) {
     console.warn('[loadAll] 词库加载失败（超时或网络不可达）:', e && e.message);
     APP.library = (typeof EMBEDDED_LIBRARY !== 'undefined' && EMBEDDED_LIBRARY.words.length) ? EMBEDDED_LIBRARY : { words: [], readings: [], updatedAt: 0 };
-    _libFailed = true;
+    _libFailed = !APP.library.words.length;
   }
   // 用户进度：优先后端，其次本地
   try {
@@ -5134,7 +5139,7 @@ function ensureDaily() {
 }
 
 async function saveProgress() {
-  localStorage.setItem(SAVE_KEY, JSON.stringify(APP.progress));
+  localStorage.setItem(currentSaveKey(), JSON.stringify(APP.progress));
   try {
     await safeFetch('/api/progress', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -5780,10 +5785,42 @@ function showLibError() {
 }
 
 /* ---------- 用户登录 / 会话 ---------- */
+const LOCAL_USERS_KEY = 'happy-vocab-local-users-v1';
+function getLocalUsers() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function setLocalUsers(users) {
+  try { localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users)); }
+  catch (e) { /* ignore */ }
+}
+function hashLocalPw(u, p) {
+  // 简单的确定性混淆（非安全加密，仅用于本地不同用户间做基本隔离）
+  const s = u + '::' + p + '::happy-vocab';
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24); h |= 0; }
+  return 'h' + Math.abs(h).toString(36);
+}
+function registerLocal(username, password) {
+  const users = getLocalUsers();
+  if (users[username]) return { ok: false, msg: '用户名已存在' };
+  users[username] = { p: hashLocalPw(username, password), createdAt: Date.now() };
+  setLocalUsers(users);
+  return { ok: true };
+}
+function loginLocal(username, password) {
+  const users = getLocalUsers();
+  if (!users[username]) return { ok: false, msg: '用户名不存在' };
+  if (users[username].p !== hashLocalPw(username, password)) return { ok: false, msg: '密码错误' };
+  return { ok: true };
+}
+
 // 启动或刷新时拉取当前会话，决定进度归属：已登录→按 userId；匿名→default
 async function fetchMe() {
+  APP.hasBackend = false;
   try {
     const r = await fetchJSON('/api/auth/me', 8000);
+    APP.hasBackend = true;            // 能正常返回 JSON，说明后端存在
     APP.user = (r && r.user) ? r.user : null;
   } catch (e) { APP.user = null; }
   APP.clientId = APP.user ? APP.user.id : 'default';
@@ -5810,6 +5847,7 @@ function updateAuthUI() {
 }
 
 function openAuthModal() {
+  const localHint = APP.hasBackend ? '' : '<p class="hint" style="margin:8px 0 -6px">当前为 <b>GitHub Pages 静态预览版</b>，无后端云同步。注册/登录仅在本机浏览器生效，数据随浏览器清除而消失。</p>';
   const html =
     '<div class="auth-card">'
     + '<div class="auth-tabs">'
@@ -5818,6 +5856,7 @@ function openAuthModal() {
     + '</div>'
     + '<input id="authUser" class="auth-input" maxlength="24" placeholder="用户名（2–24 字，字母/数字/中文）" autocomplete="username" />'
     + '<input id="authPw" class="auth-input" type="password" maxlength="64" placeholder="密码（至少 6 位）" autocomplete="current-password" />'
+    + localHint
     + '<div class="auth-msg" id="authMsg"></div>'
     + '<button class="btn block" id="authSubmit">登录</button>'
     + '</div>';
@@ -5841,19 +5880,34 @@ function openAuthModal() {
     msg.textContent = '处理中…';
     submit.disabled = true;
     try {
-      const r = await safeFetch('/api/auth/' + mode, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!j.ok) { msg.textContent = j.msg || '操作失败'; submit.disabled = false; return; }
-      APP.user = j.user;
-      APP.clientId = j.user.id;
-      closeModal();
-      toast(mode === 'login' ? '登录成功' : '注册成功，已自动登录');
-      updateAuthUI();
-      await reloadProgressForUser();
+      if (APP.hasBackend) {
+        // 后端在线：走服务器账号
+        const r = await safeFetch('/api/auth/' + mode, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!j.ok) { msg.textContent = j.msg || '操作失败'; submit.disabled = false; return; }
+        APP.user = j.user;
+        APP.clientId = j.user.id;
+        closeModal();
+        toast(mode === 'login' ? '登录成功' : '注册成功，已自动登录');
+        updateAuthUI();
+        await reloadProgressForUser();
+      } else {
+        // 静态托管无后端：本地账号模式
+        const res = mode === 'register'
+          ? registerLocal(username, password)
+          : loginLocal(username, password);
+        if (!res.ok) { msg.textContent = res.msg; submit.disabled = false; return; }
+        APP.user = { id: username, local: true };
+        APP.clientId = 'local:' + username;
+        closeModal();
+        toast((mode === 'login' ? '登录' : '注册') + '成功（本地模式，数据仅保存在本机浏览器）');
+        updateAuthUI();
+        await reloadProgressForUser();
+      }
     } catch (e) {
       msg.textContent = '网络错误，请重试';
       submit.disabled = false;
@@ -5883,10 +5937,11 @@ async function reloadProgressForUser() {
 
 async function doLogout() {
   try { await safeFetch('/api/auth/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
+  const wasLocal = APP.user && APP.user.local;
   APP.user = null;
   APP.clientId = 'default';
-  // 清掉本机缓存，避免不同用户共用浏览器时进度串档
-  try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
+  // 清掉本机缓存，避免不同用户共用浏览器时进度串档；但本地账号退出时应保留其专属进度
+  try { if (!wasLocal) localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
   updateAuthUI();
   await reloadProgressForUser();
   toast('已退出登录');
