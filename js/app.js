@@ -1101,5 +1101,8 @@ APP.settings = loadSettings();
 APP.progress = normalizeProgress(defaultProgress());
 APP.library = APP.library || { words: [], readings: [], updatedAt: 0 };
 
+// 预加载 vxiaozhi 助记图清单（单词卡/象形记据此显示精确配图；加载失败静默降级为无图）
+if (typeof loadPictImages === 'function') { try { loadPictImages(); } catch (e) {} }
+
 window.APP = APP;
 init();
