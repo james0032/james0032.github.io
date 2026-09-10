@@ -183,10 +183,16 @@ export function wordCardHTML(w, { showAudio = true, showNote = true, showStar = 
   const usPart = (showAudio && us) ? `<span class="phon-tag us">美</span><span class="audio-btn mini" data-act="us" data-word="${escapeHtml(w.word)}" title="美音">${IC.volumeSm}</span><span class="phon-us">${us}</span>` : (us ? `<span class="phon-tag us">美</span><span class="phon-us">${us}</span>` : '');
   const phonLine = (uk || us) ? `<div class="word-phon cols">${ukPart}${usPart}</div>` : '';
   const noteBtn = showNote ? `<button class="btn sm gray" data-act="note" data-word="${escapeHtml(w.word)}">+生词本</button>` : '';
+  // vxiaozhi 精确助记图：有图才显示。尺寸由 .word-pict 约束（不超出卡片），加载失败自动移除，加载中/无图不占位。
+  const pictUrl = (typeof vxImgURL === 'function') ? vxImgURL(w.word) : null;
+  const pictHTML = pictUrl
+    ? `<img class="word-pict" src="${escapeHtml(pictUrl)}" alt="${escapeHtml(w.word)} 助记图" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`
+    : '';
   return `
   <div class="word-card" data-word="${escapeHtml(w.word)}">
     <div class="word-top">
       <div class="word-main">${escapeHtml(w.word)} ${mastered} ${formNote}</div>
+      ${pictHTML}
     </div>
     ${phonLine}
     ${ph ? `<div class="phonics">拼读: ${escapeHtml(ph)}</div>` : ''}
