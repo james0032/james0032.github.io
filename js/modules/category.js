@@ -46,9 +46,9 @@ function iconSvg(v) {
   const stroke = coll !== 'ph';
   return `<svg class="p-svg" viewBox="0 0 ${iw || 24} ${ih || 24}" fill="${stroke ? 'none' : 'currentColor'}" stroke="${stroke ? 'currentColor' : 'none'}" stroke-width="${stroke ? 1.8 : 0}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
-// 真实语义图片：LoremFlickr 按单词语义返回真实照片；lock 使同一词稳定显示同一张（避免每次刷新变图）
-function realPhotoURL(w) {
-  const s = String(w || '').toLowerCase();
+// 真实语义图片：LoremFlickr 按「语义英文标签」返回真实照片；lock 使同一词稳定显示同一张（避免每次刷新变图）
+function realPhotoURL(w, tag) {
+  const s = String(tag || w || '').toLowerCase();
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 100000;
   return `https://loremflickr.com/240/240/${encodeURIComponent(s)}?lock=${h}`;
@@ -330,7 +330,9 @@ function renderPictCats(view, ctx, APP, tax) {
     </div>
     <div class="cat-grid">
       ${cats.map((c) => {
-        const preview = c === '图标简笔' ? iconSvg(tax.pictIcon[byCat[c][0][0]]) : `<img class="c-prev-img" loading="lazy" alt="${escapeHtml(byCat[c][0][0])}" src="${realPhotoURL(byCat[c][0][0])}">`;
+        const preview = c === '图标简笔'
+          ? iconSvg(tax.pictIcon[byCat[c][0][0]])
+          : (() => { const tw = byCat[c][0][0]; const tag = tax.pict[tw] && tax.pict[tw][2]; return tag ? `<img class="c-prev-img" loading="lazy" alt="${escapeHtml(tw)}" src="${realPhotoURL(tw, tag)}">` : ''; })();
         const sample = c === '图标简笔'
           ? byCat[c].slice(0, 4).map(([w]) => escapeHtml(w)).join(' ')
           : byCat[c].slice(0, 4).map(([w, e]) => escapeHtml(e)).join(' ');
@@ -369,8 +371,10 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   const imgHTML = (w, v) => {
     if (isIconCat) return iconSvg(v);                 // 图标简笔模块：保留 SVG 简笔（本身就是简笔画）
     const em = escapeHtml((v && v[0]) || '🔤');        // 表情图兜底
-    // 真实语义图片优先：LoremFlickr 真实照片按单词语义取图；加载失败自动回退 emoji
-    return `<img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${realPhotoURL(w)}" data-emoji="${em}">`;
+    const tag = v && v[2];                             // 语义英文图关键词（来自 emoji/含义桥）
+    if (!tag) return `<span class="p-e">${em}</span>`; // 无语义图关键词 → 直接表情图兜底
+    // 真实语义照片优先：LoremFlickr 真实照片按「语义标签」取图（不再是英文单词），加载失败自动回退 emoji
+    return `<img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${realPhotoURL(w, tag)}" data-emoji="${em}">`;
   };
   const pager = (pos) => `
     <div class="pager pager-${pos}">
