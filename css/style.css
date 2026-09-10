@@ -302,6 +302,7 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 /* 分类入口卡：图标简笔小预览 */
 .c-prev { display: flex; align-items: center; justify-content: center; margin: 2px 0 4px; }
 .c-prev .p-svg { width: 34px; height: 34px; color: var(--primary); }
+.c-prev-img { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; background: var(--block); }
 /* 象形记翻页 */
 .pager { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
 .pager.top { margin-top: 4px; }
