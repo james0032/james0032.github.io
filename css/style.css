@@ -208,8 +208,11 @@ body {
 
 /* Word card */
 .word-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 14px; }
-.word-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.word-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .word-main { font-size: 28px; font-weight: 800; letter-spacing: .5px; }
+/* vxiaozhi 助记图缩略图：固定在卡片右上角，等比缩放不裁剪、不溢出（max 32vw 防窄屏超限） */
+.word-pict { flex: 0 0 auto; width: 92px; height: 92px; max-width: 32vw; max-height: 32vw; object-fit: contain; border-radius: var(--radius-s); background: var(--bg); border: 1px solid var(--line); }
+@media (max-width: 380px) { .word-pict { width: 72px; height: 72px; } }
 .word-phon { color: var(--muted); font-size: 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .phonics { font-family: "Courier New", monospace; font-size: 16px; color: var(--primary-d); margin: 6px 0 4px; letter-spacing: 1px; }
 .meaning { font-size: 16px; margin-top: 6px; }
