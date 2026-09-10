@@ -39,6 +39,13 @@ const FREQ_TIERS = [
 const PICT_ICONS = { '动物与自然': '🐻', '食物与饮品': '🍎', '人物与身体': '🧑', '物品与工具': '🔧', '活动与运动': '⚽', '旅行与地点': '✈', '情感与表情': '😀', '符号': '🔣', '图标简笔': '🖍️', '义符': '🔤', '其他': '✨' };
 // 象形记总数：emoji 图记 + 线性图标简笔
 function pictTotal(tax) { return Object.keys(tax.pict || {}).length + Object.keys(tax.pictIcon || {}).length; }
+// 线性图标简笔 SVG（phosphor 为填充型，其余为描边型，分别处理以保证都能渲染）
+function iconSvg(v) {
+  if (!v) return '';
+  const [coll, , body, iw, ih] = v;
+  const stroke = coll !== 'ph';
+  return `<svg class="p-svg" viewBox="0 0 ${iw || 24} ${ih || 24}" fill="${stroke ? 'none' : 'currentColor'}" stroke="${stroke ? 'currentColor' : 'none'}" stroke-width="${stroke ? 1.8 : 0}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+}
 
 // 人教版高中册顺序（与听写模块保持一致），用于单元排序与分组
 const HS_BOOKS = ['必修一', '必修二', '必修三', '选必一', '选必二', '选必三', '选必四'];
@@ -101,7 +108,6 @@ export default {
       { kind: 'roots', icon: IC.bookOpenSm, name: '词根记', desc: '词根词缀拆词', badge: '加载中…' },
       { kind: 'freq', icon: IC.chartSm, name: '考频记', desc: '按考试词频分层', badge: '加载中…' },
       { kind: 'similar', icon: IC.targetSm, name: '相似记', desc: '易混词对比记', badge: '加载中…' },
-      { kind: 'homo', icon: '🔤', name: '谐音记', desc: '谐音联想记忆', badge: '加载中…' },
     ];
     view.innerHTML = `
       <div class="section-title"><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>分类记 · 共 ${cats.length} 个分类 / ${words.length} 词</div>
@@ -152,7 +158,6 @@ export default {
       };
       if (!view.isConnected) return;
       set('pict', pictTotal(tax) + ' 词有图记');
-      set('homo', (Object.keys(tax.homo || {})).length + ' 词谐音');
       set('roots', (tax.roots || []).length + ' 组词根词缀');
       const fc = FREQ_TIERS.map((t) => {
         const ws = Object.entries(tax.freq || {}).filter(([w, r]) => byWordIn(m, w) && t.test(r));
@@ -162,7 +167,7 @@ export default {
       const sc = (tax.similar || []).filter((g) => act(g).length >= 2).length;
       set('similar', sc + ' 组易混词');
     }).catch(() => {
-      ['pict', 'roots', 'freq', 'similar', 'homo'].forEach((k) => {
+      ['pict', 'roots', 'freq', 'similar'].forEach((k) => {
         const el = view.querySelector(`[data-taxbadge="${k}"]`);
         if (el) el.textContent = '数据未加载';
       });
@@ -182,7 +187,6 @@ function openTaxSub(view, ctx, APP, kind) {
     else if (kind === 'similar') renderSimilar(view, ctx, APP, tax);
     else if (kind === 'freq') renderFreq(view, ctx, APP, tax);
     else if (kind === 'pict') renderPictCats(view, ctx, APP, tax);
-    else if (kind === 'homo') renderHomophone(view, ctx, APP, tax);
   }).catch(() => {
     view.innerHTML = '<div class="card">扩展分类数据加载失败，请通过服务器（而非本地文件）访问后重试。</div>';
   });
@@ -318,12 +322,19 @@ function renderPictCats(view, ctx, APP, tax) {
       <p class="hint" style="margin-top:4px">为单词配一幅「心理图像」，图像联想是最古老的记忆术。图源：Unicode CLDR 开放 emoji 词表 + Tabler/Phosphor 开源简笔图标（MIT）。</p>
     </div>
     <div class="cat-grid">
-      ${cats.map((c) => `
+      ${cats.map((c) => {
+        const preview = c === '图标简笔' ? iconSvg(tax.pictIcon[byCat[c][0][0]]) : '';
+        const sample = c === '图标简笔'
+          ? byCat[c].slice(0, 4).map(([w]) => escapeHtml(w)).join(' ')
+          : byCat[c].slice(0, 4).map(([w, e]) => escapeHtml(e)).join(' ');
+        return `
       <div class="cat-card" data-pcat="${escapeHtml(c)}">
         <div class="c-name">${PICT_ICONS[c] || '✨'} ${escapeHtml(c)}</div>
-        <div class="c-count">${byCat[c].slice(0, 4).map(([w, e]) => escapeHtml(e)).join(' ')}</div>
+        ${preview ? `<div class="c-prev">${preview}</div>` : ''}
+        <div class="c-count">${sample}</div>
         <span class="badge">${byCat[c].length} 词</span>
-      </div>`).join('')}
+      </div>`;
+      }).join('')}
     </div>`;
   view.querySelector('#back').onclick = back;
   view.querySelectorAll('.cat-card[data-pcat]').forEach((card) => {
@@ -332,20 +343,24 @@ function renderPictCats(view, ctx, APP, tax) {
   view.scrollTop = 0;
 }
 
-function renderPictGrid(view, ctx, APP, tax, cat) {
+function renderPictGrid(view, ctx, APP, tax, cat, page) {
+  if (typeof page !== 'number' || page < 0) page = 0;
   const m = wordMap(APP);
   const isIconCat = cat === '图标简笔';
-  const items = isIconCat
+  const isMeanCat = cat === '义符';
+  const all = isIconCat
     ? Object.entries(tax.pictIcon || {}).filter(([w]) => m.has(w) && !tax.pict[w])
         .sort((a, b) => ((m.get(a[0]).difficulty || 9) - (m.get(b[0]).difficulty || 9)) || a[0].localeCompare(b[0]))
     : Object.entries(tax.pict || {}).filter(([w, [, c]]) => c === cat && m.has(w))
         .sort((a, b) => ((m.get(a[0]).difficulty || 9) - (m.get(b[0]).difficulty || 9)) || a[0].localeCompare(b[0]));
+  const PAGE = 48;
+  const totalPages = Math.max(1, Math.ceil(all.length / PAGE));
+  if (page >= totalPages) page = totalPages - 1;
+  const items = all.slice(page * PAGE, page * PAGE + PAGE);
   const shortMeaning = (w) => { const x = m.get(w); return ((x && x.meaning) || '').split(/[；;]/)[0]; };
   const imgHTML = (w, v) => {
-    if (isIconCat) {
-      const [, , body, iw, ih] = v;
-      return `<svg class="p-svg" viewBox="0 0 ${iw || 24} ${ih || 24}" fill="none">${body}</svg>`;
-    }
+    if (isIconCat) return iconSvg(v);
+    if (isMeanCat) return `<span class="p-e">${escapeHtml(v[0])}</span>`; // 义符：含义联想 emoji，不联网拉图（避免 3000+ 请求卡顿）
     // 象形记：优先展示在线 AI 助记图（word.vxiaozhi.com），加载失败/无图自动回退 emoji
     const em = escapeHtml(v[0]);
     const letter = w[0].toLowerCase();
@@ -354,10 +369,17 @@ function renderPictGrid(view, ctx, APP, tax, cat) {
     const alt = /^[A-Z]/.test(w) ? `https://word.vxiaozhi.com/imgs/word_imgs/${letter}/${encodeURIComponent(w)}2.jpg` : '';
     return `<img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${base}" data-alt="${escapeHtml(alt)}" data-emoji="${em}">`;
   };
+  const pager = (pos) => `
+    <div class="pager pager-${pos}">
+      <button class="btn sm ghost" data-pg="prev" ${page <= 0 ? 'disabled' : ''}>‹ 上一页</button>
+      <span class="pager-info">第 ${page + 1}/${totalPages} 页 · 共 ${all.length} 词</span>
+      <button class="btn sm ghost" data-pg="next" ${page + 1 >= totalPages ? 'disabled' : ''}>下一页 ›</button>
+    </div>`;
   view.innerHTML = `
-    <div class="section-title">🧩象形记 · ${escapeHtml(cat)}（${items.length} 词）</div>
+    <div class="section-title">🧩象形记 · ${escapeHtml(cat)}（${all.length} 词）</div>
     <div class="card"><div class="between"><h2>${PICT_ICONS[cat] || '✨'} ${escapeHtml(cat)}</h2><button class="btn sm ghost" id="back">返回</button></div>
-    <p class="hint" style="margin-top:4px">点击任意词卡进入闪记；点「全部闪记」从该分类第一个词开始过词。多数单词配有在线 AI 助记图（来源 word.vxiaozhi.com），加载不出时自动回退 emoji。</p></div>
+    <p class="hint" style="margin-top:4px">${isMeanCat ? '含义联想：用单词中文释义里的关键词配 emoji，建立图像关联（本地生成，不联网）。' : '点击任意词卡进入闪记；点「全部闪记」从该分类第一个词开始过词。多数单词配有在线 AI 助记图（来源 word.vxiaozhi.com），加载不出时自动回退 emoji。'}每页 ${PAGE} 词，可翻页浏览。</p></div>
+    ${totalPages > 1 ? pager('top') : ''}
     <div class="pict-grid">
       ${items.map(([w, v]) => `
       <button class="pict-card" data-word="${escapeHtml(w)}">
@@ -366,12 +388,19 @@ function renderPictGrid(view, ctx, APP, tax, cat) {
         <span class="p-m">${escapeHtml(shortMeaning(w).slice(0, 18))}</span>
       </button>`).join('')}
     </div>
-    <button class="btn block mt" id="allFlash">${IC.zapSm}全部闪记（${items.length} 词）</button>`;
+    ${totalPages > 1 ? pager('bottom') : ''}
+    <button class="btn block mt" id="allFlash">${IC.zapSm}全部闪记（${all.length} 词）</button>`;
   view.querySelector('#back').onclick = () => renderPictCats(view, ctx, APP, tax);
+  const goPage = (p) => renderPictGrid(view, ctx, APP, tax, cat, p);
+  view.querySelectorAll('[data-pg]').forEach((b) => b.addEventListener('click', () => {
+    if (b.disabled) return;
+    if (b.dataset.pg === 'prev') goPage(page - 1);
+    else goPage(page + 1);
+  }));
   view.querySelectorAll('.pict-card').forEach((b) => {
     b.addEventListener('click', () => {
       const w = m.get(b.dataset.word);
-      if (w) openCategory(view, ctx, `象形记 · ${w.word}`, [w], () => renderPictGrid(view, ctx, APP, tax, cat));
+      if (w) openCategory(view, ctx, `象形记 · ${w.word}`, [w], () => renderPictGrid(view, ctx, APP, tax, cat, 0));
     });
   });
   // 在线助记图加载失败 → 先尝试大写词 2 命名，再回退 emoji
@@ -383,71 +412,11 @@ function renderPictGrid(view, ctx, APP, tax, cat) {
     });
   });
   view.querySelector('#allFlash').onclick = () => {
-    const act = items.map(([w]) => m.get(w)).filter((w) => w && !isMastered(w.word) && ctx.matchDifficulty(w));
+    const act = all.map(([w]) => m.get(w)).filter((w) => w && !isMastered(w.word) && ctx.matchDifficulty(w));
     if (!act.length) { ctx.toast('该分类在当前难度下暂无待练单词 🎉'); return; }
-    openCategory(view, ctx, `象形记 · ${cat}`, act, () => renderPictGrid(view, ctx, APP, tax, cat));
+    openCategory(view, ctx, `象形记 · ${cat}`, act, () => renderPictGrid(view, ctx, APP, tax, cat, 0));
   };
   view.scrollTop = 0;
-}
-
-function renderHomophone(view, ctx, APP, tax) {
-  const back = backMain();
-  const homo = tax.homo || {};
-  const m = wordMap(APP);
-  const byLetter = {};
-  for (const w of Object.keys(homo)) {
-    if (!m.has(w)) continue;
-    const L = w[0].toUpperCase();
-    (byLetter[L] = byLetter[L] || []).push(w);
-  }
-  const letters = Object.keys(byLetter).sort();
-  let letter = 'ALL';
-  const sortWords = (arr) => arr.slice().sort((a, b) => ((m.get(a).difficulty || 9) - (m.get(b).difficulty || 9)) || a.localeCompare(b));
-  const cardHTML = (w) => {
-    const h = homo[w];
-    const x = m.get(w);
-    const diff = (x && x.difficulty) || 9;
-    return `<button class="homo-card" data-word="${escapeHtml(w)}">
-      <span class="h-w">${escapeHtml(w)} <span class="badge" style="margin-top:0">难度 ${diff}</span></span>
-      <span class="h-homo">谐音「${escapeHtml(h.homo)}」</span>
-      <span class="h-trick">${escapeHtml(h.trick)}</span>
-    </button>`;
-  };
-  function render() {
-    const keys = letter === 'ALL'
-      ? Object.keys(homo).filter((w) => m.has(w))
-      : (byLetter[letter] || []);
-    const items = sortWords(keys).map((w) => m.get(w)).filter(Boolean);
-    view.innerHTML = `
-      <div class="section-title">🔤谐音记 · ${Object.keys(homo).filter((w) => m.has(w)).length} 词</div>
-      <div class="card">
-        <div class="between"><h2>谐音联想 · 笑完就记住</h2><button class="btn sm ghost" id="back">返回分类</button></div>
-        <p class="hint" style="margin-top:4px">把单词发音联想成中文谐音短句，建立荒诞有趣的画面，记忆最牢。数据来源：网上整理的谐音记忆法精选。</p>
-        <div class="letter-bar">
-          <span class="letter-chip all ${letter === 'ALL' ? 'on' : ''}" data-l="ALL">全部</span>
-          ${letters.map((L) => `<span class="letter-chip ${letter === L ? 'on' : ''}" data-l="${L}">${L}</span>`).join('')}
-        </div>
-      </div>
-      <div class="homo-grid">
-        ${items.map((w) => cardHTML(w.word.toLowerCase())).join('')}
-      </div>
-      <button class="btn block mt" id="allFlash">${IC.zapSm}全部闪记（${items.length} 词）</button>`;
-    view.querySelector('#back').onclick = back;
-    view.querySelectorAll('.letter-chip').forEach((c) => c.addEventListener('click', () => { letter = c.dataset.l; render(); }));
-    view.querySelectorAll('.homo-card').forEach((b) => {
-      b.addEventListener('click', () => {
-        const w = m.get(b.dataset.word);
-        if (w) openCategory(view, ctx, `谐音记 · ${w.word}`, [w], () => renderHomophone(view, ctx, APP, tax));
-      });
-    });
-    view.querySelector('#allFlash').onclick = () => {
-      const act = items.filter((w) => w && !isMastered(w.word) && ctx.matchDifficulty(w));
-      if (!act.length) { ctx.toast('当前难度下暂无待练单词 🎉'); return; }
-      openCategory(view, ctx, '谐音记', act, () => renderHomophone(view, ctx, APP, tax));
-    };
-    view.scrollTop = 0;
-  }
-  render();
 }
 
 function openHSUnits(view, ctx, APP) {  const groups = hsUnitGroups(APP);
