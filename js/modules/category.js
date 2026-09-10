@@ -46,6 +46,13 @@ function iconSvg(v) {
   const stroke = coll !== 'ph';
   return `<svg class="p-svg" viewBox="0 0 ${iw || 24} ${ih || 24}" fill="${stroke ? 'none' : 'currentColor'}" stroke="${stroke ? 'currentColor' : 'none'}" stroke-width="${stroke ? 1.8 : 0}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
+// 真实语义图片：LoremFlickr 按单词语义返回真实照片；lock 使同一词稳定显示同一张（避免每次刷新变图）
+function realPhotoURL(w) {
+  const s = String(w || '').toLowerCase();
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 100000;
+  return `https://loremflickr.com/240/240/${encodeURIComponent(s)}?lock=${h}`;
+}
 
 // 人教版高中册顺序（与听写模块保持一致），用于单元排序与分组
 const HS_BOOKS = ['必修一', '必修二', '必修三', '选必一', '选必二', '选必三', '选必四'];
@@ -319,11 +326,11 @@ function renderPictCats(view, ctx, APP, tax) {
     <div class="section-title">🧩象形记 · ${pictTotal(tax)} 词有图记</div>
     <div class="card">
       <div class="between"><h2>象形图记 · 一图记一词</h2><button class="btn sm ghost" id="back">返回分类</button></div>
-      <p class="hint" style="margin-top:4px">为单词配一幅「心理图像」，图像联想是最古老的记忆术。图源：Unicode CLDR 开放 emoji 词表 + Tabler/Phosphor 开源简笔图标（MIT）。</p>
+      <p class="hint" style="margin-top:4px">为单词配一幅「心理图像」，图像联想是最古老的记忆术。图源：真实语义照片（LoremFlickr 真实照片，按词义取图）优先，缺图时回退 Unicode emoji 与 Tabler/Phosphor 开源简笔图标。</p>
     </div>
     <div class="cat-grid">
       ${cats.map((c) => {
-        const preview = c === '图标简笔' ? iconSvg(tax.pictIcon[byCat[c][0][0]]) : '';
+        const preview = c === '图标简笔' ? iconSvg(tax.pictIcon[byCat[c][0][0]]) : `<img class="c-prev-img" loading="lazy" alt="${escapeHtml(byCat[c][0][0])}" src="${realPhotoURL(byCat[c][0][0])}">`;
         const sample = c === '图标简笔'
           ? byCat[c].slice(0, 4).map(([w]) => escapeHtml(w)).join(' ')
           : byCat[c].slice(0, 4).map(([w, e]) => escapeHtml(e)).join(' ');
@@ -337,6 +344,7 @@ function renderPictCats(view, ctx, APP, tax) {
       }).join('')}
     </div>`;
   view.querySelector('#back').onclick = back;
+  view.querySelectorAll('.c-prev-img').forEach((img) => { img.addEventListener('error', () => { img.style.display = 'none'; }); });
   view.querySelectorAll('.cat-card[data-pcat]').forEach((card) => {
     card.addEventListener('click', () => renderPictGrid(view, ctx, APP, tax, card.dataset.pcat));
   });
@@ -359,15 +367,10 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   const items = all.slice(page * PAGE, page * PAGE + PAGE);
   const shortMeaning = (w) => { const x = m.get(w); return ((x && x.meaning) || '').split(/[；;]/)[0]; };
   const imgHTML = (w, v) => {
-    if (isIconCat) return iconSvg(v);
-    if (isMeanCat) return `<span class="p-e">${escapeHtml(v[0])}</span>`; // 义符：含义联想 emoji，不联网拉图（避免 3000+ 请求卡顿）
-    // 象形记：优先展示在线 AI 助记图（word.vxiaozhi.com），加载失败/无图自动回退 emoji
-    const em = escapeHtml(v[0]);
-    const letter = w[0].toLowerCase();
-    const lower = w.toLowerCase();
-    const base = `https://word.vxiaozhi.com/imgs/word_imgs/${letter}/${encodeURIComponent(lower)}.jpg`;
-    const alt = /^[A-Z]/.test(w) ? `https://word.vxiaozhi.com/imgs/word_imgs/${letter}/${encodeURIComponent(w)}2.jpg` : '';
-    return `<img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${base}" data-alt="${escapeHtml(alt)}" data-emoji="${em}">`;
+    if (isIconCat) return iconSvg(v);                 // 图标简笔模块：保留 SVG 简笔（本身就是简笔画）
+    const em = escapeHtml((v && v[0]) || '🔤');        // 表情图兜底
+    // 真实语义图片优先：LoremFlickr 真实照片按单词语义取图；加载失败自动回退 emoji
+    return `<img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${realPhotoURL(w)}" data-emoji="${em}">`;
   };
   const pager = (pos) => `
     <div class="pager pager-${pos}">
@@ -378,7 +381,7 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   view.innerHTML = `
     <div class="section-title">🧩象形记 · ${escapeHtml(cat)}（${all.length} 词）</div>
     <div class="card"><div class="between"><h2>${PICT_ICONS[cat] || '✨'} ${escapeHtml(cat)}</h2><button class="btn sm ghost" id="back">返回</button></div>
-    <p class="hint" style="margin-top:4px">${isMeanCat ? '含义联想：用单词中文释义里的关键词配 emoji，建立图像关联（本地生成，不联网）。' : '点击任意词卡进入闪记；点「全部闪记」从该分类第一个词开始过词。多数单词配有在线 AI 助记图（来源 word.vxiaozhi.com），加载不出时自动回退 emoji。'}每页 ${PAGE} 词，可翻页浏览。</p></div>
+    <p class="hint" style="margin-top:4px">${isMeanCat ? '含义联想：用单词中文释义里的关键词配 emoji，建立图像关联（本地生成，不联网）。' : '点击任意词卡进入闪记；点「全部闪记」从该分类第一个词开始过词。单词优先配真实语义照片（来源 LoremFlickr 真实照片，按词义取图），加载不出时自动回退 emoji。'}每页 ${PAGE} 词，可翻页浏览。</p></div>
     ${totalPages > 1 ? pager('top') : ''}
     <div class="pict-grid">
       ${items.map(([w, v]) => `
@@ -403,10 +406,9 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
       if (w) openCategory(view, ctx, `象形记 · ${w.word}`, [w], () => renderPictGrid(view, ctx, APP, tax, cat, 0));
     });
   });
-  // 在线助记图加载失败 → 先尝试大写词 2 命名，再回退 emoji
+  // 真实语义照片加载失败 → 回退 emoji（表情图兜底）
   view.querySelectorAll('.p-img').forEach((img) => {
     img.addEventListener('error', function onErr() {
-      if (img.dataset.alt && !img.dataset.triedAlt) { img.dataset.triedAlt = '1'; img.src = img.dataset.alt; return; }
       const sp = document.createElement('span'); sp.className = 'p-e'; sp.textContent = img.dataset.emoji || '🔤';
       img.replaceWith(sp);
     });
