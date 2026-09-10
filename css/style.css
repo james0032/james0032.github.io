@@ -299,22 +299,19 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .pict-card .p-m { font-size: 11px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pict-card .p-img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 8px; background: var(--block); margin-bottom: 2px; }
 .pict-card .p-src { font-size: 9px; color: var(--muted); margin-top: 1px; }
+/* 分类入口卡：图标简笔小预览 */
+.c-prev { display: flex; align-items: center; justify-content: center; margin: 2px 0 4px; }
+.c-prev .p-svg { width: 34px; height: 34px; color: var(--primary); }
+/* 象形记翻页 */
+.pager { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+.pager.top { margin-top: 4px; }
+.pager.bottom { margin-bottom: 4px; }
+.pager-info { font-size: 13px; color: var(--muted); }
+.pager button[disabled] { opacity: .4; cursor: not-allowed; }
 
-/* 谐音记 */
-.homo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.homo-card { border: 1px solid var(--line); background: var(--card); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; transition: transform .1s; min-width: 0; }
-.homo-card:active { transform: scale(.98); }
-.homo-card .h-w { font-weight: 800; font-size: 15px; color: var(--text); }
-.homo-card .h-homo { font-size: 14px; color: var(--primary-d); font-weight: 700; }
-.homo-card .h-trick { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; word-break: break-word; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.letter-bar { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0; }
-.letter-chip { border: 1px solid var(--line); background: var(--card); border-radius: 7px; padding: 3px 9px; font-size: 13px; cursor: pointer; color: var(--muted); }
-.letter-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
-.letter-chip.all { font-weight: 700; }
 @media (min-width: 720px) {
   .tax-grid { grid-template-columns: repeat(5, 1fr); }
   .pict-grid { grid-template-columns: repeat(6, 1fr); }
-  .homo-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* reading */
