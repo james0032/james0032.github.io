@@ -18,6 +18,26 @@ function loadTax() {
   }
   return _taxPromise;
 }
+
+// 象形记精确配图清单：单词 -> vxiaozhi 助记图 URL。
+// 数据来源 https://github.com/vxiaozhi/vocabulary-book-by-deepseek（已上线 https://word.vxiaozhi.com），
+// 每个单词由 AI 按其词义生成一张助记图像，按「字母/单词.jpg」命名，对应精准、远优于 emoji/语义标签取图。
+// 清单由 tools/build_vxiaozhi_pict.js 依据本词库与 vxiaozhi 词表交集生成（word -> 远程图 URL），这里只读取。
+let _pictImgs = null; // Map<wordLower, url>
+function loadPictImages() {
+  if (_pictImgs) return Promise.resolve(_pictImgs);
+  _pictImgs = new Map();
+  return fetch('/data/pict_images.json?v=20260910e')
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((obj) => { Object.entries(obj || {}).forEach(([w, url]) => _pictImgs.set(String(w).toLowerCase(), url)); return _pictImgs; })
+    .catch(() => _pictImgs);
+}
+// 取单词的 vxiaozhi 精确助记图 URL（无则 null），供象形记优先显示
+function vxImgURL(w) {
+  if (!_pictImgs || !w) return null;
+  return _pictImgs.get(String(w).toLowerCase()) || null;
+}
+
 let _wmap = null;
 function wordMap(APP) {
   if (!_wmap) {
@@ -46,14 +66,6 @@ function iconSvg(v) {
   const stroke = coll !== 'ph';
   return `<svg class="p-svg" viewBox="0 0 ${iw || 24} ${ih || 24}" fill="${stroke ? 'none' : 'currentColor'}" stroke="${stroke ? 'currentColor' : 'none'}" stroke-width="${stroke ? 1.8 : 0}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
-// 真实语义图片：LoremFlickr 按「语义英文标签」返回真实照片；lock 使同一词稳定显示同一张（避免每次刷新变图）
-function realPhotoURL(w, tag) {
-  const s = String(tag || w || '').toLowerCase();
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 100000;
-  return `https://loremflickr.com/240/240/${encodeURIComponent(s)}?lock=${h}`;
-}
-
 // 人教版高中册顺序（与听写模块保持一致），用于单元排序与分组
 const HS_BOOKS = ['必修一', '必修二', '必修三', '选必一', '选必二', '选必三', '选必四'];
 function hsUnitSortKey(u) {
@@ -193,7 +205,7 @@ function openTaxSub(view, ctx, APP, kind) {
     if (kind === 'roots') renderRoots(view, ctx, APP, tax, 'all');
     else if (kind === 'similar') renderSimilar(view, ctx, APP, tax);
     else if (kind === 'freq') renderFreq(view, ctx, APP, tax);
-    else if (kind === 'pict') renderPictCats(view, ctx, APP, tax);
+    else if (kind === 'pict') loadPictImages().then(() => renderPictCats(view, ctx, APP, tax)).catch(() => renderPictCats(view, ctx, APP, tax));
   }).catch(() => {
     view.innerHTML = '<div class="card">扩展分类数据加载失败，请通过服务器（而非本地文件）访问后重试。</div>';
   });
@@ -326,13 +338,18 @@ function renderPictCats(view, ctx, APP, tax) {
     <div class="section-title">🧩象形记 · ${pictTotal(tax)} 词有图记</div>
     <div class="card">
       <div class="between"><h2>象形图记 · 一图记一词</h2><button class="btn sm ghost" id="back">返回分类</button></div>
-      <p class="hint" style="margin-top:4px">为单词配一幅「心理图像」，图像联想是最古老的记忆术。图源：真实语义照片（LoremFlickr 真实照片，按词义取图）优先，缺图时回退 Unicode emoji 与 Tabler/Phosphor 开源简笔图标。</p>
+      <p class="hint" style="margin-top:4px">为单词配一幅「心理图像」，图像联想是最古老的记忆术。图源：vxiaozhi AI 助记图（每个单词一张按词义精确生成的配图，已上线 word.vxiaozhi.com）优先，缺图时回退 Unicode emoji 与 Tabler/Phosphor 开源简笔图标。</p>
     </div>
     <div class="cat-grid">
       ${cats.map((c) => {
         const preview = c === '图标简笔'
           ? iconSvg(tax.pictIcon[byCat[c][0][0]])
-          : (() => { const tw = byCat[c][0][0]; const tag = tax.pict[tw] && tax.pict[tw][2]; return tag ? `<img class="c-prev-img" loading="lazy" alt="${escapeHtml(tw)}" src="${realPhotoURL(tw, tag)}">` : ''; })();
+          : (() => {
+              const hit = byCat[c].find(([w]) => vxImgURL(w));
+              if (!hit) return '';
+              const tw = hit[0];
+              return `<img class="c-prev-img" loading="lazy" alt="${escapeHtml(tw)}" src="${escapeHtml(vxImgURL(tw))}">`;
+            })();
         const sample = c === '图标简笔'
           ? byCat[c].slice(0, 4).map(([w]) => escapeHtml(w)).join(' ')
           : byCat[c].slice(0, 4).map(([w, e]) => escapeHtml(e)).join(' ');
@@ -371,10 +388,11 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   const imgHTML = (w, v) => {
     if (isIconCat) return iconSvg(v);                 // 图标简笔模块：保留 SVG 简笔（本身就是简笔画）
     const em = escapeHtml((v && v[0]) || '🔤');        // 表情图兜底
-    const tag = v && v[2];                             // 语义英文图关键词（来自 emoji/含义桥）
-    if (!tag) return `<span class="p-e">${em}</span>`; // 无语义图关键词 → 直接表情图兜底
-    // 真实语义照片优先：LoremFlickr 真实照片按「语义标签」取图（不再是英文单词），加载失败自动回退 emoji
-    return `<img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${realPhotoURL(w, tag)}" data-emoji="${em}">`;
+    // 精确助记图优先：vxiaozhi 每个单词的 AI 助记图像（按单词命名，对应精准），无图回退 emoji
+    const url = vxImgURL(w);
+    if (url) return `<img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${escapeHtml(url)}" data-emoji="${em}">`;
+    // 无 vxiaozhi 图：回退 Unicode emoji（象形/义符类）
+    return `<span class="p-e">${em}</span>`;
   };
   const pager = (pos) => `
     <div class="pager pager-${pos}">
@@ -385,7 +403,7 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   view.innerHTML = `
     <div class="section-title">🧩象形记 · ${escapeHtml(cat)}（${all.length} 词）</div>
     <div class="card"><div class="between"><h2>${PICT_ICONS[cat] || '✨'} ${escapeHtml(cat)}</h2><button class="btn sm ghost" id="back">返回</button></div>
-    <p class="hint" style="margin-top:4px">${isMeanCat ? '含义联想：用单词中文释义里的关键词配 emoji，建立图像关联（本地生成，不联网）。' : '点击任意词卡进入闪记；点「全部闪记」从该分类第一个词开始过词。单词优先配真实语义照片（来源 LoremFlickr 真实照片，按词义取图），加载不出时自动回退 emoji。'}每页 ${PAGE} 词，可翻页浏览。</p></div>
+    <p class="hint" style="margin-top:4px">${isMeanCat ? '含义联想：用单词中文释义里的关键词配 emoji，建立图像关联（本地生成，不联网）。' : '点击任意词卡进入闪记；点「全部闪记」从该分类第一个词开始过词。单词优先显示 vxiaozhi AI 助记图（按词义精确生成），无图时回退 emoji。'}每页 ${PAGE} 词，可翻页浏览。</p></div>
     ${totalPages > 1 ? pager('top') : ''}
     <div class="pict-grid">
       ${items.map(([w, v]) => `
