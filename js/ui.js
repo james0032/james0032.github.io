@@ -192,8 +192,8 @@ export function wordCardHTML(w, { showAudio = true, showNote = true, showStar = 
   <div class="word-card" data-word="${escapeHtml(w.word)}">
     <div class="word-top">
       <div class="word-main">${escapeHtml(w.word)} ${mastered} ${formNote}</div>
-      ${pictHTML}
     </div>
+    ${pictHTML}
     ${phonLine}
     ${ph ? `<div class="phonics">拼读: ${escapeHtml(ph)}</div>` : ''}
     <div class="meaning">${formatMeaningHTML(w.meaning)}</div>
