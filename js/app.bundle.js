@@ -613,7 +613,7 @@ function collocHTML(collocations) {
   return `<div class="colloc"><div class="colloc-title">常用搭配</div>${items}</div>`;
 }
 
-function wordCardHTML(w, { showAudio = true, showNote = true, showStar = true } = {}) {
+function wordCardHTML(w, { showAudio = true, showNote = true, showStar = true, fallbackEmoji = false } = {}) {
   if (!w) return '';
   const uk = formatPhonetic(w.phoneticUk || w.phonetic || '');
   const us = formatPhonetic(w.phoneticUs || '');
@@ -632,9 +632,17 @@ function wordCardHTML(w, { showAudio = true, showNote = true, showStar = true } 
   // （源图右下角固定带「小智晖的AI单词本」水印，位于底边 93.9%~98.1%，裁掉整条底边即彻底去除水印）。
   // 加载失败时整块移除，加载中/无图不占位。
   const pictUrl = (typeof vxImgURL === 'function') ? vxImgURL(w.word) : null;
-  const pictHTML = pictUrl
-    ? `<div class="word-pict-wrap"><img class="word-pict" src="${escapeHtml(pictUrl)}" alt="${escapeHtml(w.word)} 助记图" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="(this.closest('.word-pict-wrap')||this).remove()"></div>`
-    : '';
+  const emoji = (fallbackEmoji && typeof pictEmoji === 'function') ? pictEmoji(w.word) : null;
+  let pictHTML;
+  if (pictUrl) {
+    // vxiaozhi 精确助记图优先（加载失败则整块移除）
+    pictHTML = `<div class="word-pict-wrap"><img class="word-pict" src="${escapeHtml(pictUrl)}" alt="${escapeHtml(w.word)} 助记图" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="(this.closest('.word-pict-wrap')||this).remove()"></div>`;
+  } else if (emoji) {
+    // 无助记图时回退象形记表情图（Unicode emoji），让单词闪记始终有「心理图像」
+    pictHTML = `<div class="word-pict-wrap word-pict-emoji-wrap"><span class="word-pict-emoji" aria-hidden="true">${escapeHtml(emoji)}</span></div>`;
+  } else {
+    pictHTML = '';
+  }
   return `
   <div class="word-card" data-word="${escapeHtml(w.word)}">
     <div class="word-top">
@@ -1469,7 +1477,7 @@ let _pictImgs = null; // Map<wordLower, url>
 function loadPictImages() {
   if (_pictImgs) return Promise.resolve(_pictImgs);
   _pictImgs = new Map();
-  return safeFetch('/data/pict_images.json?v=20260911d')
+  return safeFetch('/data/pict_images.json?v=20260911e')
     .then((r) => (r.ok ? r.json() : {}))
     .then((obj) => { Object.entries(obj || {}).forEach(([w, url]) => _pictImgs.set(String(w).toLowerCase(), url)); return _pictImgs; })
     .catch(() => _pictImgs);
@@ -1479,6 +1487,22 @@ function vxImgURL(w) {
   if (!_pictImgs || !w) return null;
   return _pictImgs.get(String(w).toLowerCase()) || null;
 }
+// 取单词的「象形记表情图」（Unicode emoji）：来自 taxonomy.pict[w][0]。
+// 仅在单词属于象形记（在 tax.pict 中有记录）时返回，否则返回 null —— 即「用象形记里的表情图兜底」，
+// 不在象形记里的词不给无意义 emoji。供单词卡片/闪记在无助记图时回退显示。
+function pictEmoji(w) {
+  if (!w) return null;
+  const lw = String(w).toLowerCase();
+  if (_tax && _tax.pict && _tax.pict[lw]) return _tax.pict[lw][0];
+  return null;
+}
+
+// 暴露给全局，供 ui.js 的 wordCardHTML（单词卡片/闪记共用）以及 app.js 启动钩子调用。
+// 这样单词闪记缺 vxiaozhi 助记图时，会自动回退到象形记 emoji 表情图。
+window.loadPictImages = loadPictImages;
+window.vxImgURL = vxImgURL;
+window.pictEmoji = pictEmoji;
+window.loadTax = loadTax;
 
 let _wmap = null;
 function wordMap(APP) {
@@ -1975,7 +1999,7 @@ function openCategory(view, ctx, title, words, onBack) {
       <button class="btn block mt" id="toQuiz">${IC.checkSm}开始练习</button>
     `;
     const wrap = view.querySelector('#flashCard');
-    wrap.innerHTML = wordCardHTML(w, { showNote: true });
+    wrap.innerHTML = wordCardHTML(w, { showNote: true, fallbackEmoji: true });
     bindWordCardEvents(wrap, ctx);
     // 自动播放英式发音
     ctx.playUK(w.word);
@@ -4493,7 +4517,7 @@ function renderFlash(view, ctx, reading, setMode) {
       <button class="btn block mt" id="done">${IC.checkSm}完成闪记</button>
     `;
     const wrap = view.querySelector('#flashCard');
-    wrap.innerHTML = wordCardHTML(w, { showNote: true });
+    wrap.innerHTML = wordCardHTML(w, { showNote: true, fallbackEmoji: true });
     bindWordCardEvents(wrap, ctx);
     // 自动播放英式发音
     ctx.playUK(w.word);
@@ -6147,6 +6171,8 @@ APP.library = APP.library || { words: [], readings: [], updatedAt: 0 };
 
 // 预加载 vxiaozhi 助记图清单（单词卡/象形记据此显示精确配图；加载失败静默降级为无图）
 if (typeof loadPictImages === 'function') { try { loadPictImages(); } catch (e) {} }
+// 预加载象形记分类（taxonomy.pict 提供单词→表情图 emoji 兜底，闪记缺图时回退显示）
+if (typeof loadTax === 'function') { try { loadTax(); } catch (e) {} }
 
 window.APP = APP;
 init();
