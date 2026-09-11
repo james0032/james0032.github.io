@@ -183,10 +183,12 @@ export function wordCardHTML(w, { showAudio = true, showNote = true, showStar = 
   const usPart = (showAudio && us) ? `<span class="phon-tag us">美</span><span class="audio-btn mini" data-act="us" data-word="${escapeHtml(w.word)}" title="美音">${IC.volumeSm}</span><span class="phon-us">${us}</span>` : (us ? `<span class="phon-tag us">美</span><span class="phon-us">${us}</span>` : '');
   const phonLine = (uk || us) ? `<div class="word-phon cols">${ukPart}${usPart}</div>` : '';
   const noteBtn = showNote ? `<button class="btn sm gray" data-act="note" data-word="${escapeHtml(w.word)}">+生词本</button>` : '';
-  // vxiaozhi 精确助记图：有图才显示。尺寸由 .word-pict 约束（不超出卡片），加载失败自动移除，加载中/无图不占位。
+  // vxiaozhi 精确助记图：有图才显示。外层 .word-pict-wrap 用 aspect-ratio 裁掉底部约 7.5%
+  // （源图右下角固定带「小智晖的AI单词本」水印，位于底边 93.9%~98.1%，裁掉整条底边即彻底去除水印）。
+  // 加载失败时整块移除，加载中/无图不占位。
   const pictUrl = (typeof vxImgURL === 'function') ? vxImgURL(w.word) : null;
   const pictHTML = pictUrl
-    ? `<img class="word-pict" src="${escapeHtml(pictUrl)}" alt="${escapeHtml(w.word)} 助记图" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`
+    ? `<div class="word-pict-wrap"><img class="word-pict" src="${escapeHtml(pictUrl)}" alt="${escapeHtml(w.word)} 助记图" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="(this.closest('.word-pict-wrap')||this).remove()"></div>`
     : '';
   return `
   <div class="word-card" data-word="${escapeHtml(w.word)}">
