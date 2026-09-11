@@ -518,14 +518,21 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .youdao-link { display: block; margin-top: 14px; background: var(--primary); color: #fff; text-decoration: none; text-align: center; border-radius: 10px; padding: 11px 12px; font-weight: 700; font-size: 14px; }
 .youdao-link:active { background: var(--primary-d); }
 
-/* 单词闪记 - 卡片两侧悬浮箭头（切换单词） */
+/* 单词闪记 - 卡片两侧悬浮箭头（切换单词）
+   改为 position:fixed 钉在浏览器左右两侧的垂直中点，不随卡片内容滚动而移动 */
 .flash-wrap { position: relative; margin-top: 12px; padding: 0 6px; }
-.flash-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; border: none; background: var(--primary); color: #fff; font-size: 26px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 3px 10px rgba(91,123,245,.35); opacity: .82; z-index: 2; -webkit-tap-highlight-color: transparent; }
+.flash-arrow { position: fixed; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--primary); color: #fff; font-size: 28px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 14px rgba(91,123,245,.4); opacity: .9; z-index: 60; -webkit-tap-highlight-color: transparent; }
 .flash-arrow:hover { opacity: 1; }
 .flash-arrow:active { transform: translateY(-50%) scale(.92); }
-.flash-arrow.left { left: -4px; }
-.flash-arrow.right { right: -4px; }
+.flash-arrow.left { left: 10px; }
+.flash-arrow.right { right: 10px; }
 .flash-arrow.disabled { opacity: .25; pointer-events: none; }
+/* 窄屏：箭头紧贴边缘并略缩小，避免遮挡卡片 */
+@media (max-width: 520px) {
+  .flash-arrow { width: 38px; height: 38px; font-size: 24px; }
+  .flash-arrow.left { left: 4px; }
+  .flash-arrow.right { right: 4px; }
+}
 
 /* ================== 听力训练 ================== */
 .lst-strategy { padding: 0; overflow: hidden; }
