@@ -111,7 +111,7 @@ export default {
       <div class="card">
         <button class="btn block" id="quickStudy">${IC.targetSm}随机练习（10词）</button>
         <div class="row mt">
-          <button class="btn ghost block" id="quickWrong">${IC.bookXSm}复习错词本</button>
+          <button class="btn ghost block" id="quickWrong">${IC.bookXSm}背错词本</button>
           <button class="btn soft block" id="quickNote">${IC.starSm}背生词本</button>
         </div>
         <button class="btn gray block mt" id="goCategory">${IC.gridSm}进入分类记</button>
