@@ -324,6 +324,10 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 /* 分类预览缩略图：外层 52×52 裁切容器，内图加高 → 裁掉底部约 16% 的源图水印 */
 .c-prev-wrap { display: block; width: 52px; height: 52px; overflow: hidden; border-radius: 8px; background: var(--block); }
 .c-prev-img { display: block; width: 52px; height: 62px; object-fit: cover; object-position: center top; }
+/* 象形记小分类卡：只显示分类小图标 + 名称 + 词数，不显示预览图/示例词或表情图 */
+.cat-card[data-pcat] { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 14px 8px; }
+.cat-card[data-pcat] .c-name { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 15px; }
+.cat-card[data-pcat] .c-ico { font-size: 30px; line-height: 1; }
 /* 象形记翻页 */
 .pager { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
 .pager.top { margin-top: 4px; }
