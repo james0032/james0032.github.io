@@ -628,10 +628,12 @@ function wordCardHTML(w, { showAudio = true, showNote = true, showStar = true } 
   const usPart = (showAudio && us) ? `<span class="phon-tag us">美</span><span class="audio-btn mini" data-act="us" data-word="${escapeHtml(w.word)}" title="美音">${IC.volumeSm}</span><span class="phon-us">${us}</span>` : (us ? `<span class="phon-tag us">美</span><span class="phon-us">${us}</span>` : '');
   const phonLine = (uk || us) ? `<div class="word-phon cols">${ukPart}${usPart}</div>` : '';
   const noteBtn = showNote ? `<button class="btn sm gray" data-act="note" data-word="${escapeHtml(w.word)}">+生词本</button>` : '';
-  // vxiaozhi 精确助记图：有图才显示。尺寸由 .word-pict 约束（不超出卡片），加载失败自动移除，加载中/无图不占位。
+  // vxiaozhi 精确助记图：有图才显示。外层 .word-pict-wrap 用 aspect-ratio 裁掉底部约 7.5%
+  // （源图右下角固定带「小智晖的AI单词本」水印，位于底边 93.9%~98.1%，裁掉整条底边即彻底去除水印）。
+  // 加载失败时整块移除，加载中/无图不占位。
   const pictUrl = (typeof vxImgURL === 'function') ? vxImgURL(w.word) : null;
   const pictHTML = pictUrl
-    ? `<img class="word-pict" src="${escapeHtml(pictUrl)}" alt="${escapeHtml(w.word)} 助记图" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`
+    ? `<div class="word-pict-wrap"><img class="word-pict" src="${escapeHtml(pictUrl)}" alt="${escapeHtml(w.word)} 助记图" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="(this.closest('.word-pict-wrap')||this).remove()"></div>`
     : '';
   return `
   <div class="word-card" data-word="${escapeHtml(w.word)}">
@@ -1467,7 +1469,7 @@ let _pictImgs = null; // Map<wordLower, url>
 function loadPictImages() {
   if (_pictImgs) return Promise.resolve(_pictImgs);
   _pictImgs = new Map();
-  return safeFetch('/data/pict_images.json?v=20260910h')
+  return safeFetch('/data/pict_images.json?v=20260911a')
     .then((r) => (r.ok ? r.json() : {}))
     .then((obj) => { Object.entries(obj || {}).forEach(([w, url]) => _pictImgs.set(String(w).toLowerCase(), url)); return _pictImgs; })
     .catch(() => _pictImgs);
@@ -1788,7 +1790,8 @@ function renderPictCats(view, ctx, APP, tax) {
               const hit = byCat[c].find(([w]) => vxImgURL(w));
               if (!hit) return '';
               const tw = hit[0];
-              return `<img class="c-prev-img" loading="lazy" alt="${escapeHtml(tw)}" src="${escapeHtml(vxImgURL(tw))}">`;
+              // 外层裁掉底部约 16%，去除源图右下角水印
+              return `<span class="c-prev-wrap"><img class="c-prev-img" loading="lazy" alt="${escapeHtml(tw)}" src="${escapeHtml(vxImgURL(tw))}" onerror="(this.closest('.c-prev-wrap')||this).remove()"></span>`;
             })();
         const sample = c === '图标简笔'
           ? byCat[c].slice(0, 4).map(([w]) => escapeHtml(w)).join(' ')
@@ -1803,7 +1806,8 @@ function renderPictCats(view, ctx, APP, tax) {
       }).join('')}
     </div>`;
   view.querySelector('#back').onclick = back;
-  view.querySelectorAll('.c-prev-img').forEach((img) => { img.addEventListener('error', () => { img.style.display = 'none'; }); });
+  // 预览缩略图加载失败：移除整块（含外层裁切容器），保持布局整洁
+  view.querySelectorAll('.c-prev-img').forEach((img) => { img.addEventListener('error', () => { (img.closest('.c-prev-wrap') || img).remove(); }); });
   view.querySelectorAll('.cat-card[data-pcat]').forEach((card) => {
     card.addEventListener('click', () => renderPictGrid(view, ctx, APP, tax, card.dataset.pcat));
   });
@@ -1830,7 +1834,8 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
     const em = escapeHtml((v && v[0]) || '🔤');        // 表情图兜底
     // 精确助记图优先：vxiaozhi 每个单词的 AI 助记图像（按单词命名，对应精准），无图回退 emoji
     const url = vxImgURL(w);
-    if (url) return `<img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${escapeHtml(url)}" data-emoji="${em}">`;
+    // 外层 .p-img-wrap 裁掉底部约 15%，去除源图右下角「小智晖的AI单词本」水印
+    if (url) return `<span class="p-img-wrap"><img class="p-img" loading="lazy" alt="${escapeHtml(w)}" src="${escapeHtml(url)}" data-emoji="${em}"></span>`;
     // 无 vxiaozhi 图：回退 Unicode emoji（象形/义符类）
     return `<span class="p-e">${em}</span>`;
   };
@@ -1872,7 +1877,7 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   view.querySelectorAll('.p-img').forEach((img) => {
     img.addEventListener('error', function onErr() {
       const sp = document.createElement('span'); sp.className = 'p-e'; sp.textContent = img.dataset.emoji || '🔤';
-      img.replaceWith(sp);
+      (img.closest('.p-img-wrap') || img).replaceWith(sp);
     });
   });
   view.querySelector('#allFlash').onclick = () => {
@@ -3961,7 +3966,7 @@ const __mod_overview = {
       <div class="card">
         <button class="btn block" id="quickStudy">${IC.targetSm}随机练习（10词）</button>
         <div class="row mt">
-          <button class="btn ghost block" id="quickWrong">${IC.bookXSm}复习错词本</button>
+          <button class="btn ghost block" id="quickWrong">${IC.bookXSm}背错词本</button>
           <button class="btn soft block" id="quickNote">${IC.starSm}背生词本</button>
         </div>
         <button class="btn gray block mt" id="goCategory">${IC.gridSm}进入分类记</button>
