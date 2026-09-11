@@ -1807,31 +1807,13 @@ function renderPictCats(view, ctx, APP, tax) {
       <p class="hint" style="margin-top:4px">为单词配一幅「心理图像」，图像联想是最古老的记忆术。图源：vxiaozhi AI 助记图（每个单词一张按词义精确生成的配图，已上线 word.vxiaozhi.com）优先，缺图时回退 Unicode emoji 与 Tabler/Phosphor 开源简笔图标。</p>
     </div>
     <div class="cat-grid">
-      ${cats.map((c) => {
-        const preview = c === '图标简笔'
-          ? iconSvg(tax.pictIcon[byCat[c][0][0]])
-          : (() => {
-              const hit = byCat[c].find(([w]) => vxImgURL(w));
-              if (!hit) return '';
-              const tw = hit[0];
-              // 外层裁掉底部约 16%，去除源图右下角水印
-              return `<span class="c-prev-wrap"><img class="c-prev-img" loading="lazy" alt="${escapeHtml(tw)}" src="${escapeHtml(vxImgURL(tw))}" onerror="(this.closest('.c-prev-wrap')||this).remove()"></span>`;
-            })();
-        const sample = c === '图标简笔'
-          ? byCat[c].slice(0, 4).map(([w]) => escapeHtml(w)).join(' ')
-          : byCat[c].slice(0, 4).map(([w, e]) => escapeHtml(e)).join(' ');
-        return `
+      ${cats.map((c) => `
       <div class="cat-card" data-pcat="${escapeHtml(c)}">
-        <div class="c-name">${PICT_ICONS[c] || '✨'} ${escapeHtml(c)}</div>
-        ${preview ? `<div class="c-prev">${preview}</div>` : ''}
-        <div class="c-count">${sample}</div>
+        <div class="c-name"><span class="c-ico">${PICT_ICONS[c] || '✨'}</span>${escapeHtml(c)}</div>
         <span class="badge">${byCat[c].length} 词</span>
-      </div>`;
-      }).join('')}
+      </div>`).join('')}
     </div>`;
   view.querySelector('#back').onclick = back;
-  // 预览缩略图加载失败：移除整块（含外层裁切容器），保持布局整洁
-  view.querySelectorAll('.c-prev-img').forEach((img) => { img.addEventListener('error', () => { (img.closest('.c-prev-wrap') || img).remove(); }); });
   view.querySelectorAll('.cat-card[data-pcat]').forEach((card) => {
     card.addEventListener('click', () => renderPictGrid(view, ctx, APP, tax, card.dataset.pcat));
   });
@@ -1893,8 +1875,11 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   }));
   view.querySelectorAll('.pict-card').forEach((b) => {
     b.addEventListener('click', () => {
-      const w = m.get(b.dataset.word);
-      if (w) openCategory(view, ctx, `象形记 · ${w.word}`, [w], () => renderPictGrid(view, ctx, APP, tax, cat, 0));
+      const i = all.findIndex(([x]) => x === b.dataset.word);
+      const wordsAll = all.map(([x]) => m.get(x)).filter(Boolean);
+      if (!wordsAll.length) return;
+      // 以被点击的词为起点，打开整个小分类的闪记序列，使「上一张/下一张」能在分类内正常切换
+      openCategory(view, ctx, `象形记 · ${cat}`, wordsAll, () => renderPictGrid(view, ctx, APP, tax, cat, 0), i >= 0 ? i : 0);
     });
   });
   // 真实语义照片加载失败 → 回退 emoji（表情图兜底）
@@ -1952,9 +1937,9 @@ function openHSUnits(view, ctx, APP) {  const groups = hsUnitGroups(APP);
   });
 }
 
-function openCategory(view, ctx, title, words, onBack) {
+function openCategory(view, ctx, title, words, onBack, startIdx) {
   let mode = 'flash'; // flash | quiz
-  let idx = 0;
+  let idx = (typeof startIdx === 'number' && startIdx >= 0 && startIdx < words.length) ? startIdx : 0;
 
   function modeBar() {
     return `
