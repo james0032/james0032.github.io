@@ -637,8 +637,8 @@ function wordCardHTML(w, { showAudio = true, showNote = true, showStar = true } 
   <div class="word-card" data-word="${escapeHtml(w.word)}">
     <div class="word-top">
       <div class="word-main">${escapeHtml(w.word)} ${mastered} ${formNote}</div>
-      ${pictHTML}
     </div>
+    ${pictHTML}
     ${phonLine}
     ${ph ? `<div class="phonics">拼读: ${escapeHtml(ph)}</div>` : ''}
     <div class="meaning">${formatMeaningHTML(w.meaning)}</div>
@@ -1467,7 +1467,7 @@ let _pictImgs = null; // Map<wordLower, url>
 function loadPictImages() {
   if (_pictImgs) return Promise.resolve(_pictImgs);
   _pictImgs = new Map();
-  return safeFetch('/data/pict_images.json?v=20260910g')
+  return safeFetch('/data/pict_images.json?v=20260910h')
     .then((r) => (r.ok ? r.json() : {}))
     .then((obj) => { Object.entries(obj || {}).forEach(([w, url]) => _pictImgs.set(String(w).toLowerCase(), url)); return _pictImgs; })
     .catch(() => _pictImgs);
@@ -2099,8 +2099,20 @@ const __mod_dictation = {
       return st.order === 'rand' ? shuffle(pool) : pool;
     }
 
+    // 逐词标记「今天已听写」：仅在该单词真正被呈现（听到/作答）时记录。
+    // 关键：不再于开轮时把整批单词一次性写入——否则中途退出时，未听到的词会被误吞，
+    // 导致「当天没听过的单词」在听写模块里不再显示。返回 true 表示本次新增。
+    function markDictated(w) {
+      const lw = String(w && w.word ? w.word : w).toLowerCase();
+      if (!lw) return false;
+      const done = todayDictated(APP);
+      if (done.includes(lw)) return false;
+      done.push(lw);
+      return true;
+    }
+
     // 开始/再来一轮：取「当天未听写过」的候选词；「听写全部」时取本范围全部，否则按单词量截取。
-    // 一轮开始即把本轮单词记为「今天已听写」，确保同一单词当天只听写一轮，不再重复。
+    // 已在候选池中排除当天听写过的词；本轮单词在真正呈现时才逐词记为「今天已听写」。
     function beginRound() {
       stopAudio();
       const allFull = candidates(true);   // 包含当天已听写的（用于判断范围内是否还有词）
@@ -2112,9 +2124,6 @@ const __mod_dictation = {
       if (!all.length) { renderAllDone(); return; }
       st.cnt = Math.max(5, Math.min(200, st.cnt));
       words = st.all ? all : all.slice(0, Math.max(1, st.cnt));
-      const done = todayDictated(APP);
-      words.forEach((w) => { const lw = w.word.toLowerCase(); if (!done.includes(lw)) done.push(lw); });
-      ctx.saveProgress();
       masteredCnt = 0; wrongCnt = 0; wrongWords.length = 0; streakMap = {};
       idx = 0; presented = 1;
       presentWord(words[idx], 0);
@@ -2129,6 +2138,10 @@ const __mod_dictation = {
         .concat(unitsOf(st.syncBand).map((u) => `<option value="${escapeHtml(u)}" ${st.syncUnit === u ? 'selected' : ''}>${escapeHtml(u)}</option>`)).join('');
       const bandHint = st.syncBand !== '高中' && unitsOf(st.syncBand).length === 0
         ? '<p class="hint" style="margin-top:4px">该年级单元词表待导入，将按整个年级听写。</p>' : '';
+      // 今日进度（逐词统计）：本范围未掌握总数 - 今天还没听写的 = 今天已听写
+      const inScope = candidates(true).length;
+      const remainCnt = candidates(false).length;
+      const doneCnt = Math.max(0, inScope - remainCnt);
 
       view.innerHTML = `
         <div class="section-title">${IC.zap}快筛听写</div>
@@ -2178,7 +2191,7 @@ const __mod_dictation = {
           <div class="field"><label>听写单词量</label><input type="number" class="typing" id="cnt" value="${st.cnt}" min="5" max="200" ${st.all ? 'disabled' : ''}></div>
           <div class="field"><label>每个单词播报次数</label><input type="number" class="typing" id="plays" value="${st.plays}" min="1" max="6"></div>
           <div class="field"><label>播报间隔（秒）</label><input type="number" class="typing" id="iv" value="${st.interval}" min="1" max="10"></div>
-          <p class="hint" style="margin-top:-2px">每个单词每天只听写一轮；听过的单词今天不再重复，请到「错词本」复习未掌握的单词。</p>
+          <p class="hint" style="margin-top:-2px">今日本范围：已听写 <b>${doneCnt}</b> 词 · 剩余可听写 <b>${remainCnt}</b> 词。限制按<b>单词</b>逐词记录（与模块执行次数无关）——听过的词今天不再出现，没听过的词正常出现。</p>
 
           <button class="btn block mt" id="start">${IC.playSm}开始听写</button>
         </div>`;
@@ -2217,6 +2230,8 @@ const __mod_dictation = {
 
     function presentWord(w, curStreak) {
       streak = curStreak;
+      // 逐词精确记录：该单词此刻真正呈现（听到/作答）后才算「今天已听写」
+      if (markDictated(w)) ctx.saveProgress();
       // 中文选项用「常用译文」（取首义项），避免一长串义项；并去重
       const pool = words.filter((x) => x.word !== w.word && x.meaning);
       const options = buildEn2ZhOptions(w.meaning, pool, 10);
@@ -2357,7 +2372,7 @@ const __mod_dictation = {
             <div class="stat"><div class="num warn">${wrongCnt}</div><div class="lab">未掌握</div></div>
           </div>
           <p class="hint mt">${modeHint}</p>
-          <p class="hint">每个单词每天只听写一轮；本轮听过的单词已记录，今天不再重复。</p>
+          <p class="hint">本轮<b>实际听过</b>的单词已逐词记录，今天不再出现；未听到的单词下次仍会正常出现。</p>
           ${wrongWords.length ? `<p class="hint">未掌握的 <b>${wrongWords.length}</b> 个单词已自动进入「错词本」，建议去错词本复习。</p>` : ''}
           <button class="btn block mt" id="again">${IC.rotateSm}再来一轮（听写未听写的单词）</button>
           ${wrongWords.length ? `<button class="btn warn block mt" id="wb">${IC.bookXSm}去错词本复习错词（${wrongWords.length}）</button>` : ''}
