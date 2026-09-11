@@ -224,6 +224,9 @@ body {
    裁掉约 7.5% → 水印彻底消失，且无白边、不溢出卡片。object-fit:cover 兼容个别非 16:9 源图 */
 .word-pict-wrap { display: block; width: 100%; max-width: 340px; aspect-ratio: 1024 / 533; overflow: hidden; margin: 10px auto 4px; border-radius: var(--radius-s); background: var(--block); }
 .word-pict { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+/* 无助记图时回退的象形记表情图：复用 .word-pict-wrap 的横幅框，居中放大 emoji */
+.word-pict-emoji-wrap { display: flex; align-items: center; justify-content: center; border: 1px solid var(--line, rgba(0,0,0,.06)); }
+.word-pict-emoji { font-size: 96px; line-height: 1; }
 .word-phon { color: var(--muted); font-size: 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .phonics { font-family: "Courier New", monospace; font-size: 16px; color: var(--primary-d); margin: 6px 0 4px; letter-spacing: 1px; }
 .meaning { font-size: 16px; margin-top: 6px; }
