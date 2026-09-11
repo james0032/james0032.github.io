@@ -1469,7 +1469,7 @@ let _pictImgs = null; // Map<wordLower, url>
 function loadPictImages() {
   if (_pictImgs) return Promise.resolve(_pictImgs);
   _pictImgs = new Map();
-  return safeFetch('/data/pict_images.json?v=20260911a')
+  return safeFetch('/data/pict_images.json?v=20260911b')
     .then((r) => (r.ok ? r.json() : {}))
     .then((obj) => { Object.entries(obj || {}).forEach(([w, url]) => _pictImgs.set(String(w).toLowerCase(), url)); return _pictImgs; })
     .catch(() => _pictImgs);
