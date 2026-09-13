@@ -557,6 +557,35 @@ function commonMeaning(raw) {
   return '';
 }
 
+// 取单词的「卡片释义纯文本」：与单词卡（同步词表）formatMeaningHTML 显示的中文释义完全一致
+// （取词性 + 前 maxSense 个义项、分号连接），用于听写 / 测试的中文选项与正确答案，
+// 避免 commonMeaning 仅取首义项导致与同步词表释义不一致。
+function plainMeaning(raw, maxSense = 3) {
+  if (!raw) return '';
+  const norm = normalizeMeaning(raw);
+  if (!norm) return '';
+  const tokens = norm.split(new RegExp('(?<![A-Za-z])(?=\\s*' + POS_CLASS + ')', 'i'));
+  const lines = [];
+  for (const token of tokens) {
+    const t = token.trim();
+    if (!t) continue;
+    const m = t.match(new RegExp('^\\s*(' + POS_CLASS + ')\\s*(.*)$', 'i'));
+    if (m) {
+      const pos = m[1].toLowerCase();
+      let senses = m[2].split(/[；;]/).map((x) => x.trim()).filter((s) => s && /[A-Za-z一-龥]/.test(s));
+      if (!senses.length) continue;
+      if (senses.length > maxSense) senses = senses.slice(0, maxSense);
+      lines.push(pos + ' ' + senses.join('；'));
+    } else {
+      let senses = t.split(/[；;]/).map((x) => x.trim()).filter((s) => s && /[A-Za-z一-龥]/.test(s));
+      if (!senses.length) continue;
+      if (senses.length > maxSense) senses = senses.slice(0, maxSense);
+      lines.push(senses.join('；'));
+    }
+  }
+  return lines.join(' / ');
+}
+
 // 生成英译中选项：以「常用译文」为单位，去重、含正确答案、洗牌，返回字符串数组。
 // answerMeaning: 正确单词的 meaning；poolWords: 候选单词对象数组（含 .meaning）。
 function buildEn2ZhOptions(answerMeaning, poolWords, n = 10, full = false) {
