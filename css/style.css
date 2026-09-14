@@ -120,6 +120,15 @@ body {
 .set-group { margin: 18px 0 4px; }
 .set-group:first-of-type { margin-top: 10px; }
 .set-title { font-weight: 800; font-size: 15px; margin-bottom: 8px; color: var(--ink, #223); }
+/* 词书选择（基础词库） */
+.book-grp { border: 1px solid #e6ebf5; border-radius: 12px; margin: 8px 0; overflow: hidden; }
+.book-grp-h { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; cursor: pointer; font-weight: 700; font-size: 14px; background: #f6f8ff; }
+.book-grp-h:hover { background: #eef2ff; }
+.book-grp-b { padding: 8px 12px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.book-opt { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 0; cursor: pointer; }
+.book-opt input { width: 16px; height: 16px; accent-color: var(--primary, #4c6ef5); flex: none; }
+.bk-n { color: var(--muted); font-size: 11px; margin-left: auto; }
+.book-grp-h .bk-n { margin-left: 0; }
 .num-row { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
 .num-input {
   width: 110px; padding: 10px 12px; font-size: 16px; font-weight: 700; color: var(--ink, #223);
