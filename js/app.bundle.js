@@ -1654,12 +1654,12 @@ const __mod_category = {
     let hsUnits = 0, hsActive = 0;
     hsGroups.forEach((bk) => bk.units.forEach((u) => {
       hsUnits++;
-      hsActive += u.words.filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w)).length;
+      hsActive += u.words.filter((w) => !isMastered(w.word) && ctx.inScope(w)).length;
     }));
     // 专升本专项：统计已标注 zsb 的待练词数
     let zsbActive = 0;
     for (const w of words) {
-      if (w.zsb && !isMastered(w.word) && ctx.matchDifficulty(w)) zsbActive++;
+      if (w.zsb && !isMastered(w.word) && ctx.inScope(w)) zsbActive++;
     }
     const TAX_CARDS = [
       { kind: 'unit', icon: IC.bookSm, name: '单元记', desc: hsUnits + ' 个教材单元', badge: hsActive ? hsActive + ' 词待练' : '按册逐单元练' },
@@ -1685,7 +1685,7 @@ const __mod_category = {
         ${cats.map((c) => {
           const all = groups[c];
           const active = all.filter((w) => !isMastered(w.word));
-          const activeDiff = active.filter((w) => ctx.matchDifficulty(w));
+          const activeDiff = active.filter((w) => ctx.inScope(w));
           const masteredCount = all.length - active.length;
           const badge = activeDiff.length ? `${activeDiff.length} 词待练` : '当前难度无待练';
           return `
@@ -1704,7 +1704,7 @@ const __mod_category = {
       }
       card.addEventListener('click', () => {
         const cat = card.dataset.cat;
-        const active = groups[cat].filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+        const active = groups[cat].filter((w) => !isMastered(w.word) && ctx.inScope(w));
         if (!active.length) { ctx.toast('该分类在当前难度下暂无待练单词 🎉'); return; }
         openCategory(view, ctx, cat, active);
       });
@@ -1712,7 +1712,7 @@ const __mod_category = {
     // 异步填充五张入口卡的统计
     loadTax().then((tax) => {
       const m = wordMap(APP);
-      const act = (k) => resolveWords(APP, k).filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+      const act = (k) => resolveWords(APP, k).filter((w) => !isMastered(w.word) && ctx.inScope(w));
       const set = (kind, text) => {
         const el = view.querySelector(`[data-taxbadge="${kind}"]`);
         if (el) el.textContent = text;
@@ -1771,7 +1771,7 @@ function renderZsb(view, ctx, APP) {
     <div class="cat-grid">
       ${letters.map((L) => {
         const all = groups[L];
-        const act = all.filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+        const act = all.filter((w) => !isMastered(w.word) && ctx.inScope(w));
         return `<div class="cat-card" data-letter="${L}">
           <div class="c-name">${L}</div>
           <div class="c-count">${all.length} 词</div>
@@ -1783,7 +1783,7 @@ function renderZsb(view, ctx, APP) {
   view.querySelectorAll('.cat-card[data-letter]').forEach((card) => {
     card.addEventListener('click', () => {
       const L = card.dataset.letter;
-      const act = groups[L].filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+      const act = groups[L].filter((w) => !isMastered(w.word) && ctx.inScope(w));
       if (!act.length) { ctx.toast('该组在当前难度下暂无待练单词 🎉'); return; }
       openCategory(view, ctx, `专升本 · ${L}`, act, () => renderZsb(view, ctx, APP));
     });
@@ -1807,7 +1807,7 @@ function renderRoots(view, ctx, APP, tax, filter) {
     </div>
     <div class="cat-grid">
       ${list.map((g) => {
-        const act = resolveWords(APP, g.words).filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+        const act = resolveWords(APP, g.words).filter((w) => !isMastered(w.word) && ctx.inScope(w));
         return `<div class="cat-card" data-root="${escapeHtml(g.k)}" data-cn="${escapeHtml(g.cn)}">
           <div class="c-name">${escapeHtml(g.k)} <span class="rt-type t-${g.t}">${g.t === 'pre' ? '前缀' : g.t === 'suf' ? '后缀' : '词根'}</span></div>
           <div class="c-count">${escapeHtml(g.cn)}${g.en ? ' · ' + escapeHtml(g.en) : ''}</div>
@@ -1821,7 +1821,7 @@ function renderRoots(view, ctx, APP, tax, filter) {
     card.addEventListener('click', () => {
       const g = (tax.roots || []).find((x) => x.k === card.dataset.root);
       if (!g) return;
-      const act = resolveWords(APP, g.words).filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+      const act = resolveWords(APP, g.words).filter((w) => !isMastered(w.word) && ctx.inScope(w));
       if (!act.length) { ctx.toast('该词根在当前难度下暂无待练单词 🎉'); return; }
       openCategory(view, ctx, `词根 ${g.k} · ${g.cn}`, act, () => renderRoots(view, ctx, APP, tax, filter));
     });
@@ -1832,7 +1832,7 @@ function renderRoots(view, ctx, APP, tax, filter) {
 function renderSimilar(view, ctx, APP, tax) {
   const back = backMain();
   const groups = (tax.similar || [])
-    .map((g) => ({ g, act: resolveWords(APP, g).filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w)) }))
+    .map((g) => ({ g, act: resolveWords(APP, g).filter((w) => !isMastered(w.word) && ctx.inScope(w)) }))
     .filter((x) => x.act.length >= 2);
   view.innerHTML = `
     <div class="section-title">${IC.target}相似记 · ${groups.length} 组易混词</div>
@@ -1851,7 +1851,7 @@ function renderSimilar(view, ctx, APP, tax) {
   view.querySelectorAll('.cat-card[data-sim]').forEach((card) => {
     card.addEventListener('click', () => {
       const g = card.dataset.sim.split(',');
-      const act = resolveWords(APP, g).filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+      const act = resolveWords(APP, g).filter((w) => !isMastered(w.word) && ctx.inScope(w));
       if (act.length < 2) { ctx.toast('这组词在当前难度下暂无可练单词 🎉'); return; }
       openCategory(view, ctx, '相似记 · ' + g.slice(0, 3).join(' / ') + (g.length > 3 ? '…' : ''), act, () => renderSimilar(view, ctx, APP, tax));
     });
@@ -1871,7 +1871,7 @@ function renderFreq(view, ctx, APP, tax) {
       entries = Object.entries(tax.freq || {}).filter(([w, r]) => m.has(w) && t.test(r))
         .sort((a, b) => a[1] - b[1]).map(([w]) => w);
     }
-    const act = resolveWords(APP, entries).filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+    const act = resolveWords(APP, entries).filter((w) => !isMastered(w.word) && ctx.inScope(w));
     return { ...t, words: entries, act };
   });
   view.innerHTML = `
@@ -2004,7 +2004,7 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
     });
   });
   view.querySelector('#allFlash').onclick = () => {
-    const act = all.map(([w]) => m.get(w)).filter((w) => w && !isMastered(w.word) && ctx.matchDifficulty(w));
+    const act = all.map(([w]) => m.get(w)).filter((w) => w && !isMastered(w.word) && ctx.inScope(w));
     if (!act.length) { ctx.toast('该分类在当前难度下暂无待练单词 🎉'); return; }
     openCategory(view, ctx, `象形记 · ${cat}`, act, () => renderPictGrid(view, ctx, APP, tax, cat, 0));
   };
@@ -2025,7 +2025,7 @@ function openHSUnits(view, ctx, APP) {  const groups = hsUnitGroups(APP);
         <div class="cat-grid">
           ${bk.units.map((u) => {
             const all = u.words;
-            const active = all.filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+            const active = all.filter((w) => !isMastered(w.word) && ctx.inScope(w));
             const masteredCount = all.length - active.length;
             const badge = active.length ? `${active.length} 词待练` : '当前难度无待练';
             return `
@@ -2044,7 +2044,7 @@ function openHSUnits(view, ctx, APP) {  const groups = hsUnitGroups(APP);
     card.addEventListener('click', () => {
       const unit = card.dataset.unit;
       const all = (APP.library.words || []).filter((w) => w.pep && w.pep.band === '高中' && w.pep.unit === unit);
-      const active = all.filter((w) => !isMastered(w.word) && ctx.matchDifficulty(w));
+      const active = all.filter((w) => !isMastered(w.word) && ctx.inScope(w));
       if (!active.length) { ctx.toast('该单元在当前难度下暂无待练单词 🎉'); return; }
       openCategory(view, ctx, unit, active, () => openHSUnits(view, ctx, APP));
     });
@@ -2201,6 +2201,8 @@ const __mod_dictation = {
     function candidates(includeDictated) {
       let pool = (APP.library.words || []).filter((w) =>
         w.word && w.meaning && (st.allWords || !APP.progress.mastered[w.word.toLowerCase()]));
+      // 词书范围：选中词书后仅保留词书内单词（与难度取交集）
+      if (ctx && ctx.matchBookScope) pool = pool.filter((w) => ctx.matchBookScope(w));
       // 防重复：排除当天已经听写过的单词（每个单词每天只听写一轮）
       if (!includeDictated) {
         const done = todayDictated(APP);
@@ -4311,7 +4313,10 @@ function highlightWordObjects(reading, ctx) {
     const w = (lib.words || []).find((x) => x.word.toLowerCase() === tok);
     if (w) out.push(w);
   }
-  return out.filter((w) => !isMastered(w.word));
+  let res = out.filter((w) => !isMastered(w.word));
+  // 词书范围：选中词书后，阅读衍生的练习/闪记词也仅保留词书内单词
+  if (ctx && ctx.matchBookScope) res = res.filter((w) => ctx.matchBookScope(w));
+  return res;
 }
 
 function readingCard(r, i, ctx) {
@@ -5717,6 +5722,21 @@ function matchDifficulty(wordObj) {
   return s.diffMode === 'eq' ? (numDiff === numLv) : (numDiff <= numLv);
 }
 
+// 全局「词书范围」过滤：选中词书后，仅保留带选中词书标签的单词。
+// 未选词书时返回 true（不过滤）。与 matchDifficulty 取交集即 inScope。
+function matchBookScope(wordObj) {
+  const sel = getSelectedBooks(APP);
+  if (!sel.length) return true;
+  const bs = wordObj && wordObj.books;
+  if (!bs || !Array.isArray(bs) || !bs.length) return false;
+  const s = new Set(sel);
+  return bs.some((b) => s.has(b));
+}
+// 单词是否「在范围内」：既满足词书范围，又满足难度范围（两者取交集）。
+function inScope(wordObj) {
+  return matchBookScope(wordObj) && matchDifficulty(wordObj);
+}
+
 // 返回当前选中的难度等级数字（1-7）；未选 / 选「全部」时返回 null。
 // 阅读记高亮用：高亮「当前等级」与「当前等级低一级」两个等级的单词。
 function difficultyLevel() {
@@ -6618,7 +6638,7 @@ function goto(page) {
   }
   const mod = APP.modules[page];
   if (mod && mod.render) {
-    const ctxObj = { playUK, playUS, toast, openModal, closeModal, refreshHeader, completeRound, recordWrongAnswer, recordWrongQuestion, recordTask, recordReadTask, markMastered, toggleNotebook, findWord, saveProgress, completeSession, completeReadingSession, isMastered, inWrongBook, matchDifficulty, difficultyOf, difficultyLevel, openSettings, showWordCard, todayStr, settings: APP.settings };
+    const ctxObj = { playUK, playUS, toast, openModal, closeModal, refreshHeader, completeRound, recordWrongAnswer, recordWrongQuestion, recordTask, recordReadTask, markMastered, toggleNotebook, findWord, saveProgress, completeSession, completeReadingSession, isMastered, inWrongBook, matchDifficulty, matchBookScope, inScope, difficultyOf, difficultyLevel, openSettings, showWordCard, todayStr, settings: APP.settings };
     currentCtx = ctxObj;
     try {
       mod.render({ view, APP, ctx: ctxObj });
