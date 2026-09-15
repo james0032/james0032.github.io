@@ -732,6 +732,15 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .auth-msg { min-height: 18px; font-size: 12.5px; color: #e8590c; margin-bottom: 8px; text-align: center; }
 .auth-card .btn.block { width: 100%; margin-top: 2px; }
 
+/* ---------- 首次进入：初始化引导 ---------- */
+.onboard { text-align: center; max-width: 440px; padding: 6px 2px; }
+.onboard-logo { font-size: 22px; font-weight: 800; color: var(--primary); letter-spacing: 2px; margin-bottom: 4px; }
+.onboard h2 { margin: 8px 0 10px; font-size: 19px; line-height: 1.45; }
+.onboard .hint { text-align: center; line-height: 1.75; margin: 8px 0 16px; }
+.onboard .btn.block { width: 100%; margin-top: 0; }
+.onboard .onboard-tip { font-size: 12px; opacity: .5; margin-top: 10px; margin-bottom: 0; }
+.onboard .onboard-sign { margin-top: 16px; font-weight: 700; color: var(--primary); letter-spacing: 1px; }
+
 /* ---------- 单词记：底部整合入口（生词本 + 错词本 + AI 任务词） ---------- */
 .wj-opts { display: flex; flex-direction: column; gap: 12px; }
 .wj-opt {
