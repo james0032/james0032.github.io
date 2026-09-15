@@ -1621,12 +1621,22 @@ function hsUnitGroups(APP) {
   return list;
 }
 
+// 主题分类只保留「原始语义主题」，排除后续新加词书带来的考试/词书名分类
+// （如 雅思 / COCA / 牛津 / 新概念 / 专八 / 德语学习 / 程序员 / SAT / 考研 / 托福 / GRE / 专业词汇 / 英语词典 …）。
+// 基准取自词库初始版本（git 早期提交）的 24 个分类，确保主题分类不被新词书污染。
+const ORIGINAL_THEMES = new Set([
+  '交通', '人物', '健康', '其他', '动作', '动物', '场所·家居', '天气', '学习', '家庭',
+  '工作', '情绪', '描述', '数字', '文化·传统', '时间', '短语', '社会', '科技', '自然',
+  '衣物·穿戴', '连接词', '颜色', '食物',
+]);
+
 const __mod_category = {
   render({ view, APP, ctx }) {
     const words = (APP.library && APP.library.words) || [];
     const groups = {};
     words.forEach((w) => {
       const cat = w.category || '未分类';
+      if (!ORIGINAL_THEMES.has(cat)) return; // 仅保留原主题，排除新加词书分类
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(w);
     });
@@ -1659,8 +1669,9 @@ const __mod_category = {
       { kind: 'freq', icon: IC.chartSm, name: '考频记', desc: '按考试词频分层', badge: '加载中…' },
       { kind: 'similar', icon: IC.targetSm, name: '相似记', desc: '易混词对比记', badge: '加载中…' },
     ];
+    const themeWordCount = Object.values(groups).reduce((a, g) => a + g.length, 0);
     view.innerHTML = `
-      <div class="section-title"><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>分类记 · 共 ${cats.length} 个分类 / ${words.length} 词</div>
+      <div class="section-title"><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>分类记 · 共 ${cats.length} 个分类 / ${themeWordCount} 词（仅原主题，已过滤新加词书分类）</div>
       <div class="tax-grid">
         ${TAX_CARDS.map((c) => `
         <div class="cat-card tax-card" data-tax="${c.kind}">
@@ -3899,17 +3910,17 @@ const __mod_notebook = {
       view.innerHTML = '<div class="card">' + IC.star + '生词本还是空的。<br/>在任意单词卡片点「生词本」即可收藏，随时来这里专项复习。<br/><span class="hint">做错的词会自动进入「错词本」，不会混进生词本；已掌握的单词会自动隐藏。</span></div>';
       return;
     }
-    // 今日待复习队列（按当前复习算法推荐）
-    const queue = assignQuota(queueFor(words));
+    // 生词本随时可复习：不受记忆算法轮次/到期调度限制，队列恒为全部未掌握词（仅按每日学习总量截断）
+    const queue = assignQuota(words);
     ctx.saveProgress();
     const isW3 = algo === 'wrong3';
     const hint = isW3
       ? '只收录你主动收藏的词，全部可点 <b>×</b> 取消收藏；三项练习连续 3 轮全对即判定掌握。'
-      : '复习算法：<b>' + meta.name + '</b>，按记忆节奏推荐到期的单词（今日剩余额度 ' + dailyRemain() + ' 词）；每轮全对自动进入下一轮复习任务，达标后判定掌握。';
+      : '复习算法：<b>' + meta.name + '</b>，生词本随时可复习全部单词（今日剩余额度 ' + dailyRemain() + ' 词）；每轮全对自动进入下一轮复习任务，达标后判定掌握。';
     view.innerHTML = `
       <div class="section-title">${IC.star}生词本 · ${words.length} 词</div>
       <div class="hint" style="margin:-4px 0 10px">${hint}</div>
-      <button class="btn block soft" id="study">${IC.targetSm}${isW3 ? '专项复习生词本（' + queue.length + ' 词）' : '开始今日到期复习（' + queue.length + ' 词）'}</button>
+      <button class="btn block soft" id="study">${IC.targetSm}${isW3 ? '专项复习生词本（' + queue.length + ' 词）' : '随时复习生词本（' + queue.length + ' 词）'}</button>
       <div id="list" class="nb-list mt"></div>
     `;
     const list = view.querySelector('#list');
@@ -5201,6 +5212,135 @@ function selectedUnmasteredWords(APP) {
 
 
 
+
+function isMastered(word) {
+  return !!(window.APP && window.APP.progress && window.APP.progress.mastered && window.APP.progress.mastered[String(word || '').toLowerCase()]);
+}
+
+// 记忆算法推荐的「当天待记忆」单词（AI 任务词）：
+// 未掌握的候选词（设置选了词书则仅词书内、否则全部内置词库）经算法 queueFor 过滤 + 每日总量配额。
+function aiTaskWords(APP) {
+  const sel = (APP.settings && Array.isArray(APP.settings.selectedBooks)) ? APP.settings.selectedBooks : [];
+  let cands;
+  if (sel.length) {
+    cands = selectedUnmasteredWords(APP);
+  } else {
+    cands = (APP.library.words || []).filter((w) => w.meaning && !(APP.progress.mastered && APP.progress.mastered[String(w.word).toLowerCase()]));
+  }
+  return assignQuota(queueFor(cands));
+}
+
+const BACK_BTN = '<button class="btn ghost block" id="back"><svg class="vico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg> 返回单词记</button>';
+
+const __mod_wordji = {
+  render({ view, APP, ctx }) {
+    drawHub();
+
+    function drawHub() {
+      const p = APP.progress;
+      const nbCount = (p.notebook || []).filter((w) => !isMastered(w)).length;
+      const wbCount = (p.wrongBook || []).filter((w) => !isMastered(w)).length;
+      const ai = aiTaskWords(APP);
+      ctx.saveProgress();
+      const algo = currentAlgo();
+      view.innerHTML = `
+        <div class="section-title">${IC.book}单词记</div>
+        <p class="hint" style="margin:-4px 0 12px">把生词本与错词本整合到一起：按 AI 记忆算法推荐今日任务，或专攻你收藏的生词 / 做错的词。</p>
+        <div class="wj-opts">
+          <button class="wj-opt pri" data-go="ai">
+            <span class="wj-ico">${IC.target}</span>
+            <span class="wj-t">记 AI 任务词</span>
+            <span class="wj-n">${ai.length} 词</span>
+            <span class="wj-d">${ALGOS[algo].name} 推荐今日记忆</span>
+          </button>
+          <button class="wj-opt" data-go="note">
+            <span class="wj-ico">${IC.star}</span>
+            <span class="wj-t">记生词本</span>
+            <span class="wj-n">${nbCount} 词</span>
+            <span class="wj-d">你主动收藏的生词</span>
+          </button>
+          <button class="wj-opt" data-go="wrong">
+            <span class="wj-ico">${IC.bookX}</span>
+            <span class="wj-t">记错词本</span>
+            <span class="wj-n">${wbCount} 词</span>
+            <span class="wj-d">做错待重练的词</span>
+          </button>
+        </div>
+        <div class="hint mt">AI 任务词：由「${ALGOS[algo].name}」按当天可学额度（剩余 ${dailyRemain()} 词）从你的词库中挑出待记忆单词。</div>
+      `;
+      view.querySelectorAll('.wj-opt').forEach((b) => {
+        b.addEventListener('click', () => {
+          const go = b.dataset.go;
+          if (go === 'ai') drawAi();
+          else drawSub(go === 'note' ? 'note' : 'wrong');
+        });
+      });
+    }
+
+    // 生词本 / 错词本：复用既有模块，渲染进子容器；父级保留「返回」按钮
+    function drawSub(kind) {
+      view.innerHTML = BACK_BTN + '<div id="sub" class="mt"></div>';
+      view.querySelector('#back').addEventListener('click', drawHub);
+      const sub = view.querySelector('#sub');
+      const mod = kind === 'note' ? APP.modules.notebook : APP.modules.wrongbook;
+      mod.render({ view: sub, APP, ctx });
+    }
+
+    // AI 任务词：算法推荐当天记忆的单词
+    function drawAi() {
+      const words = aiTaskWords(APP);
+      ctx.saveProgress();
+      const algo = currentAlgo();
+      if (!words.length) {
+        view.innerHTML = BACK_BTN +
+          '<div class="card mt">' + IC.targetSm + '太棒了，今天没有需要记忆的 AI 任务词 🎉<br/>可以去「记生词本」或「记错词本」专项复习。</div>';
+        view.querySelector('#back').addEventListener('click', drawHub);
+        return;
+      }
+      view.innerHTML = BACK_BTN +
+        '<div class="section-title mt">' + IC.targetSm + 'AI 任务词 · ' + words.length + ' 词</div>' +
+        '<div class="hint" style="margin:-4px 0 10px">由「' + ALGOS[algo].name + '」推荐，今日可学额度剩余 ' + dailyRemain() + ' 词。</div>' +
+        '<button class="btn block soft" id="study">' + IC.targetSm + '开始记忆 AI 任务词（' + words.length + ' 词）</button>' +
+        '<div id="list" class="nb-list mt"></div>';
+      const list = view.querySelector('#list');
+      words.forEach((w) => {
+        const row = document.createElement('div');
+        row.className = 'nb-item';
+        row.dataset.word = w.word;
+        const uk = formatPhonetic(w.phoneticUk || w.phonetic || '');
+        const us = formatPhonetic(w.phoneticUs || '');
+        const phon = (uk || us)
+          ? '<div class="nb-phon">' + (uk ? '<span class="phon-tag">英</span><span class="phon-uk">' + uk + '</span>' : '') + (us ? '<span class="phon-tag us">美</span><span class="phon-us">' + us + '</span>' : '') + '</div>'
+          : '';
+        const brief = commonMeaning(w.meaning) || w.meaning || '';
+        let roundPill = '';
+        if (algo !== 'wrong3') {
+          const info = schedInfo(w.word) || { text: '' };
+          roundPill = '<span class="wb-round ' + (info.done ? 'done' : '') + '">' + escapeHtml(info.text) + '</span>';
+        }
+        row.innerHTML =
+          '<div class="nb-main">' +
+            '<div class="nb-word">' + escapeHtml(w.word) + '</div>' +
+            phon +
+            '<div class="nb-meaning">' + escapeHtml(brief) + '</div>' +
+            (w.example ? '<div class="nb-example"><span class="nb-ex">' + escapeHtml(w.example) + '</span>' + (w.exampleCn ? '<span class="nb-ex-cn">' + escapeHtml(w.exampleCn) + '</span>' : '') + '</div>' : '') +
+            roundPill +
+          '</div>';
+        list.appendChild(row);
+      });
+      list.querySelectorAll('.nb-item').forEach((item) => {
+        item.addEventListener('click', () => ctx.showWordCard(item.dataset.word));
+      });
+      view.querySelector('#back').addEventListener('click', drawHub);
+      view.querySelector('#study').onclick = () => runWordQuiz(ctx, view, words, 'AI 任务词', { source: 'ai' });
+    }
+  },
+};
+
+
+
+
+
 // 错词本：记录「做错的单词」（不是题目），与生词本同样的列表样式：单词 + 音标 + 常用释义。
 // 收录的词不可手动点叉删除；「何时推荐、何时移出」由系统设置里的复习算法决定：
 //   - 3 次错误移除：全量推荐（每天每词只刷一轮），三项练习连续 3 轮全对移出
@@ -5245,17 +5385,16 @@ const __mod_wrongbook = {
         ctx.saveProgress();
         hint = '做错的词自动收录，<b>不可手动删除</b>；三项练习（中译英 / 英译中 / 完形填空）各对一遍算一轮，<b>连续全对 3 轮</b>自动移出。<br/><b>每天每个词只刷一轮</b>：今天已练过或额度已满的词不再出现（今天不可练 ' + (words.length - queue.length) + ' 词）。';
       } else {
-        // 艾宾浩斯 / FSRS：只推荐「已到期」的词（按到期时间先后），再按每日学习总量截断
-        queue = assignQuota(queueFor(words));
+        // 艾宾浩斯 / FSRS：错词本同样随时可复习，不受算法到期轮次限制，队列为全部未掌握错词（仅按每日学习总量截断）
+        queue = assignQuota(words);
         ctx.saveProgress();
-        const dueNow = words.filter((w) => dueTs(w.word) <= Date.now()).length;
-        hint = '复习算法：<b>' + meta.name + '</b>，按记忆节奏自动推荐到期的单词（当前到期 ' + dueNow + ' 词，今日剩余额度 ' + dailyRemain() + ' 词）。';
+        hint = '复习算法：<b>' + meta.name + '</b>，错词本随时可复习全部单词（今日剩余额度 ' + dailyRemain() + ' 词）。';
       }
 
       view.innerHTML = `
         <div class="section-title">${IC.bookX}错词本 · ${words.length} 词</div>
         <div class="hint" style="margin:-4px 0 10px">${hint}</div>
-        <button class="btn block soft" id="study">${IC.targetSm}${isW3 ? '专项重练错词本（今天可练 ' + queue.length + ' 词）' : '开始今日到期复习（' + queue.length + ' 词）'}</button>
+        <button class="btn block soft" id="study">${IC.targetSm}${isW3 ? '专项重练错词本（今天可练 ' + queue.length + ' 词）' : '随时复习错词本（' + queue.length + ' 词）'}</button>
         <div id="list" class="nb-list mt"></div>
       `;
       const list = view.querySelector('#list');
@@ -5326,13 +5465,14 @@ const __mod_wrongbook = {
 
 
 
+
 const Phonics = window.PhonicsCore;
 const APP = {
   library: { words: [], readings: [], updatedAt: 0 },
   progress: null,
   settings: null,
   page: 'overview',
-  modules: { overview: __mod_overview, category: __mod_category, reading: __mod_reading, notebook: __mod_notebook, wrongbook: __mod_wrongbook, import: __mod_import, stats: __mod_stats, dictation: __mod_dictation, listening: __mod_listening },
+  modules: { overview: __mod_overview, category: __mod_category, reading: __mod_reading, notebook: __mod_notebook, wrongbook: __mod_wrongbook, import: __mod_import, stats: __mod_stats, dictation: __mod_dictation, listening: __mod_listening, wordji: __mod_wordji },
   phraseSupplement: {}, // 阅读选词补充识别库（短语/合成词，持久化于 localStorage）
   clientId: 'default',
   user: null, // 已登录用户 {id}；null 表示匿名（进度归入 default 桶）
@@ -5817,10 +5957,17 @@ async function openSettings() {
   function renderBooks(idx) {
     if (!idx || !idx.groups) { bookPickerEl.innerHTML = '<div class="hint">词书清单暂不可用（请检查网络或部署）。</div>'; return; }
     const sel = new Set(getSelectedBooks(APP));
-    const order = ['中国考试', '国际考试', '青少年英语', '代码练习', '专业词汇', '英语词典', '德语学习'];
+    // 分组按学习优先级排序；未列出的分组按名称补在末尾
+    const fixedGroupOrder = ['中国考试', '青少年英语', '国际考试', '专业词汇', '代码练习', '英语词典', '德语学习'];
     const groups = idx.groups;
-    const grpHtml = order.filter((g) => groups[g]).map((g) => {
-      const books = groups[g];
+    const present = Object.keys(groups);
+    const orderedGroups = [
+      ...fixedGroupOrder.filter((g) => present.includes(g)),
+      ...present.filter((g) => !fixedGroupOrder.includes(g)).sort((a, b) => a.localeCompare(b, 'zh')),
+    ];
+    const grpHtml = orderedGroups.map((g) => {
+      // 组内词书按难度（易→难）再按名称排序，避免原始清单顺序混乱
+      const books = groups[g].slice().sort((a, b) => (a.difficulty - b.difficulty) || a.name.localeCompare(b.name, 'zh'));
       const total = books.reduce((s, b) => s + b.count, 0);
       const items = books.map((b) =>
         `<label class="book-opt"><input type="checkbox" class="bk" value="${b.id}" ${sel.has(b.id) ? 'checked' : ''}> ${escapeHtml(b.name)} <span class="bk-n">${b.count}</span></label>`
