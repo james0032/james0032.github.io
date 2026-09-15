@@ -5959,6 +5959,8 @@ async function openSettings() {
     const sel = new Set(getSelectedBooks(APP));
     // 分组按学习优先级排序；未列出的分组按名称补在末尾
     const fixedGroupOrder = ['中国考试', '青少年英语', '国际考试', '专业词汇', '代码练习'];
+    // 青少年英语等按「版本」细分的组，版本内显示顺序
+    const VERSION_ORDER = ['人教版', '人教版·新起点', '外研社', '外研社·新起点', '冀教', '北师大', '译林', '牛津', '剑桥', '北京版', '上海版', '新概念英语', 'EF 英语', 'RAZ 分级阅读', '中考', '高考', 'Reading Explorer', '其他'];
     const groups = idx.groups;
     const present = Object.keys(groups);
     const orderedGroups = [
@@ -5966,19 +5968,46 @@ async function openSettings() {
       ...present.filter((g) => !fixedGroupOrder.includes(g)).sort((a, b) => a.localeCompare(b, 'zh')),
     ];
     const grpHtml = orderedGroups.map((g) => {
-      // 组内词书按难度（易→难）再按名称排序，避免原始清单顺序混乱
-      const books = groups[g].slice().sort((a, b) => (a.difficulty - b.difficulty) || a.name.localeCompare(b.name, 'zh'));
+      const books = groups[g];
       const total = books.reduce((s, b) => s + b.count, 0);
-      const items = books.map((b) =>
-        `<label class="book-opt"><input type="checkbox" class="bk" value="${b.id}" ${sel.has(b.id) ? 'checked' : ''}> ${escapeHtml(b.name)} <span class="bk-n">${b.count}</span></label>`
-      ).join('');
+      const hasVer = books.some((b) => b.version);
+      let body;
+      if (hasVer) {
+        // 二级：按版本(版本→年级)嵌套
+        const verMap = {};
+        for (const b of books) (verMap[b.version || '其他'] = verMap[b.version || '其他'] || []).push(b);
+        const vers = Object.keys(verMap).sort((a, b) => {
+          const ia = VERSION_ORDER.indexOf(a), ib = VERSION_ORDER.indexOf(b);
+          return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+        });
+        body = vers.map((v) => {
+          const vb = verMap[v].slice().sort((a, b) => (a.gradeOrder - b.gradeOrder) || a.name.localeCompare(b.name, 'zh'));
+          const vtotal = vb.reduce((s, b) => s + b.count, 0);
+          const items = vb.map((b) =>
+            `<label class="book-opt"><input type="checkbox" class="bk" value="${b.id}" ${sel.has(b.id) ? 'checked' : ''}> ${escapeHtml(b.name)} <span class="bk-n">${b.count}</span></label>`
+          ).join('');
+          return `<div class="book-sub">
+            <div class="book-sub-h" data-v="${escapeHtml(v)}"><span>${escapeHtml(v)}</span><span class="bk-n">${vb.length} 本 · ${vtotal} 词 ▾</span></div>
+            <div class="book-sub-b" style="display:none">${items}</div>
+          </div>`;
+        }).join('');
+      } else {
+        // 一级：组内按难度(易→难)→名称排序
+        const sb = books.slice().sort((a, b) => (a.difficulty - b.difficulty) || a.name.localeCompare(b.name, 'zh'));
+        body = sb.map((b) =>
+          `<label class="book-opt"><input type="checkbox" class="bk" value="${b.id}" ${sel.has(b.id) ? 'checked' : ''}> ${escapeHtml(b.name)} <span class="bk-n">${b.count}</span></label>`
+        ).join('');
+      }
       return `<div class="book-grp">
         <div class="book-grp-h" data-g="${escapeHtml(g)}"><span>${escapeHtml(g)}</span><span class="bk-n">${books.length} 本 · ${total} 词 ▾</span></div>
-        <div class="book-grp-b" style="display:none">${items}</div>
+        <div class="book-grp-b" style="display:none">${body}</div>
       </div>`;
     }).join('');
     bookPickerEl.innerHTML = grpHtml;
     bookPickerEl.querySelectorAll('.book-grp-h').forEach((h) => {
+      h.onclick = () => { const b = h.nextElementSibling; b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
+    });
+    bookPickerEl.querySelectorAll('.book-sub-h').forEach((h) => {
       h.onclick = () => { const b = h.nextElementSibling; b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
     });
   }
