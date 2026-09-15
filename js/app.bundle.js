@@ -5958,7 +5958,7 @@ async function openSettings() {
     if (!idx || !idx.groups) { bookPickerEl.innerHTML = '<div class="hint">词书清单暂不可用（请检查网络或部署）。</div>'; return; }
     const sel = new Set(getSelectedBooks(APP));
     // 分组按学习优先级排序；未列出的分组按名称补在末尾
-    const fixedGroupOrder = ['中国考试', '青少年英语', '国际考试', '专业词汇', '代码练习', '英语词典', '德语学习'];
+    const fixedGroupOrder = ['中国考试', '青少年英语', '国际考试', '专业词汇', '代码练习'];
     const groups = idx.groups;
     const present = Object.keys(groups);
     const orderedGroups = [
