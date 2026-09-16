@@ -849,7 +849,6 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .fsrs-preset-seg { margin-bottom: 0; }
 .fsrs-preset-seg .seg-btn { font-size: 13px; padding: 6px 11px; }
 .fsrs-preset-note { margin: 2px 0 10px; }
-.num-unit.lock { color: #e8590c; font-weight: 800; background: #fff0e6; border-radius: 8px; padding: 2px 8px; }
 .guide-modal { max-width: 600px; }
 .guide-modal h3 { font-size: 18px; }
 .guide-modal h4 { font-size: 15px; margin: 18px 0 8px; color: var(--primary-d, #2b3a67); }
@@ -861,5 +860,4 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .guide-table tr:last-child td { border-bottom: none; }
 .guide-list { margin: 6px 0 4px; padding-left: 20px; }
 .guide-list li { font-size: 13px; color: var(--text, #2b2f38); line-height: 1.75; margin: 4px 0; }
-.guide-modal .lk { color: #e8590c; font-weight: 800; background: #fff0e6; border-radius: 6px; padding: 1px 6px; font-size: 12px; }
 
