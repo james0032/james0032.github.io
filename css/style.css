@@ -844,3 +844,22 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .kp-row.kp-doing { border-color: rgba(25,113,194,.35); }
 .kp-row.kp-doing .kp-badge { background: rgba(25,113,194,.16); color: #1971c2; }
 
+/* FSRS-6 预设方案 & 算法使用说明 */
+.fsrs-preset-row { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; flex-wrap: wrap; }
+.fsrs-preset-seg { margin-bottom: 0; }
+.fsrs-preset-seg .seg-btn { font-size: 13px; padding: 6px 11px; }
+.fsrs-preset-note { margin: 2px 0 10px; }
+.num-unit.lock { color: #e8590c; font-weight: 800; background: #fff0e6; border-radius: 8px; padding: 2px 8px; }
+.guide-modal { max-width: 600px; }
+.guide-modal h3 { font-size: 18px; }
+.guide-modal h4 { font-size: 15px; margin: 18px 0 8px; color: var(--primary-d, #2b3a67); }
+.guide-modal .hint { margin: 6px 0 4px; }
+.guide-table { margin: 6px 0 4px; overflow-x: auto; }
+.guide-table table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.6; background: var(--block, #f6f8ff); border-radius: 12px; overflow: hidden; }
+.guide-table th, .guide-table td { text-align: left; padding: 9px 11px; border-bottom: 1px solid #eef1f8; vertical-align: top; }
+.guide-table th { background: #eef2ff; color: var(--primary-d, #2b3a67); font-weight: 800; }
+.guide-table tr:last-child td { border-bottom: none; }
+.guide-list { margin: 6px 0 4px; padding-left: 20px; }
+.guide-list li { font-size: 13px; color: var(--text, #2b2f38); line-height: 1.75; margin: 4px 0; }
+.guide-modal .lk { color: #e8590c; font-weight: 800; background: #fff0e6; border-radius: 6px; padding: 1px 6px; font-size: 12px; }
+
