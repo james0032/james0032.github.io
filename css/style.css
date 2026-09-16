@@ -741,6 +741,34 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .onboard .onboard-tip { font-size: 12px; opacity: .5; margin-top: 10px; margin-bottom: 0; }
 .onboard .onboard-sign { margin-top: 16px; font-weight: 700; color: var(--primary); letter-spacing: 1px; }
 
+/* ---------- AI 练：选择题练习引擎 ---------- */
+.aiq-top { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+.aiq-back { border: none; background: transparent; color: var(--primary); font-size: 14px; font-weight: 700; cursor: pointer; padding: 6px 0; flex: none; }
+.aiq-title { flex: 1; font-weight: 700; font-size: 15px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aiq-meta { font-size: 13px; color: var(--primary); font-weight: 700; margin-bottom: 8px; opacity: .9; }
+.aiq-q { font-size: 17px; line-height: 1.5; margin-bottom: 14px; font-weight: 600; }
+.aiq-explain { margin-top: 12px; font-size: 13.5px; line-height: 1.7; }
+.aiq-ans { margin-bottom: 8px; }
+.aiq-parse { color: var(--text); opacity: .92; margin-bottom: 8px; }
+.aiq-tip { background: #fff8e6; border: 1px solid #ffe1a6; border-radius: 10px; padding: 9px 11px; color: #8a6d00; }
+.aiq-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.aiq-actions .btn { margin-top: 0; }
+
+/* ---------- AI 练：菜单 / 知识点卡片 ---------- */
+.ai-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ai-card { display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 12px; cursor: pointer; box-shadow: var(--shadow); transition: transform .08s, box-shadow .15s, border-color .15s; }
+.ai-card:active { transform: scale(.98); }
+.ai-card:hover { border-color: var(--primary); }
+.ai-ico { font-size: 30px; line-height: 1; }
+.ai-name { font-weight: 800; font-size: 16px; color: var(--text); }
+.ai-sub { font-size: 12px; color: var(--muted); text-align: center; }
+.ai-kp-list { display: flex; flex-direction: column; gap: 10px; }
+.ai-kp { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); }
+.ai-kp-info { min-width: 0; }
+.ai-kp-name { font-weight: 700; font-size: 15px; }
+.ai-kp-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.ai-kp .btn { flex: none; }
+
 /* ---------- 单词记：底部整合入口（生词本 + 错词本 + AI 任务词） ---------- */
 .wj-opts { display: flex; flex-direction: column; gap: 12px; }
 .wj-opt {
@@ -762,3 +790,57 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .wj-opt .wj-n { font-size: 13px; color: var(--primary); font-weight: 700; }
 .wj-opt .wj-d { font-size: 12px; color: var(--muted); line-height: 1.4; }
 @media (max-width: 600px) { .wj-opt { padding-left: 60px; } .wj-opt .wj-ico { width: 32px; height: 32px; } }
+
+/* ---------- 概览：FSRS6 档位 / 语法练明细 / 阅读分组子标题 ---------- */
+.section-title.sub { font-size: 13.5px; color: var(--muted); margin-top: 14px; }
+.clickable-card { cursor: pointer; transition: transform .08s, box-shadow .15s, border-color .15s; }
+.clickable-card:active { transform: scale(.995); }
+
+.fsrs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+.fsrs-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid rgba(91,123,245,.14); border-radius: 12px; background: var(--card);
+  box-shadow: var(--shadow); padding: 14px 6px; cursor: pointer; text-align: center;
+  transition: transform .08s, box-shadow .15s, border-color .15s;
+}
+.fsrs-tile:active { transform: scale(.97); }
+.fsrs-num { font-size: 22px; font-weight: 800; line-height: 1; }
+.fsrs-lab { font-size: 12px; color: var(--muted); }
+.fsrs-tile.st0 { border-color: rgba(140,150,170,.30); }
+.fsrs-tile.st0 .fsrs-num { color: var(--muted); }
+.fsrs-tile.st1 { border-color: rgba(250,82,82,.40); }
+.fsrs-tile.st1 .fsrs-num { color: #fa5252; }
+.fsrs-tile.st2 { border-color: rgba(224,130,20,.40); }
+.fsrs-tile.st2 .fsrs-num { color: #e08214; }
+.fsrs-tile.st3 { border-color: rgba(47,158,68,.40); }
+.fsrs-tile.st3 .fsrs-num { color: #2f9e44; }
+.fsrs-tile.st4 { border-color: rgba(25,113,194,.40); }
+.fsrs-tile.st4 .fsrs-num { color: #1971c2; }
+.fsrs-tile.st5 { border-color: rgba(112,72,232,.40); }
+.fsrs-tile.st5 .fsrs-num { color: #7048e8; }
+
+.detail-list { display: flex; flex-direction: column; gap: 8px; }
+.detail-item {
+  display: flex; align-items: baseline; gap: 10px; background: var(--card); border: 1px solid rgba(91,123,245,.14);
+  border-radius: 10px; box-shadow: var(--shadow); padding: 11px 14px; cursor: pointer;
+  transition: transform .08s, box-shadow .15s, border-color .15s;
+}
+.detail-item:active { transform: scale(.99); }
+.detail-item b { font-size: 15px; color: var(--text); }
+.detail-item small { font-size: 12.5px; color: var(--muted); }
+
+.kp-list { display: flex; flex-direction: column; gap: 8px; }
+.kp-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--card); border: 1px solid rgba(91,123,245,.14); border-radius: 10px;
+  box-shadow: var(--shadow); padding: 11px 14px;
+}
+.kp-name { font-size: 14.5px; font-weight: 600; color: var(--text); }
+.kp-right { display: flex; align-items: center; gap: 10px; flex: none; }
+.kp-badge { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: rgba(140,150,170,.18); color: var(--muted); }
+.kp-con { font-size: 12px; color: var(--muted); }
+.kp-row.kp-mastered { border-color: rgba(112,72,232,.35); }
+.kp-row.kp-mastered .kp-badge { background: rgba(112,72,232,.16); color: #7048e8; }
+.kp-row.kp-doing { border-color: rgba(25,113,194,.35); }
+.kp-row.kp-doing .kp-badge { background: rgba(25,113,194,.16); color: #1971c2; }
+
