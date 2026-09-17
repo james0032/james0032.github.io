@@ -58,7 +58,9 @@ body {
 .brand .logo-img { width: 40px; height: 40px; }
 .app-header { padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top)); }
 .header-top { gap: 8px; }
-.header-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.header-actions { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; justify-content: flex-end; }
+/* 登录态芯片 + 退出按钮同处一个内联流会因基线对齐抬高整行，改为 flex 容器保持头部紧凑 */
+#authArea { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .diff-badge { font-size: 11px; padding: 4px 8px; }
 .icon-btn { width: 32px; height: 32px; border-radius: 10px; font-size: 16px; }
 @media (min-width: 720px) {
@@ -75,7 +77,7 @@ body {
 .header-stat { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; font-size: 12px; opacity: .95; }
 .header-stat .stat-pill { display: inline-flex; align-items: center; gap: 3px; background: rgba(255,255,255,.14); padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
 .header-stat b { font-size: 14px; }
-.diff-badge { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; white-space: nowrap; max-width: 34vw; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.diff-badge { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; white-space: nowrap; max-width: 34vw; overflow: hidden; text-overflow: ellipsis; cursor: pointer; flex: none; }
 .diff-badge.all { background: rgba(255,255,255,.18); color: #fff; }
 .diff-badge.active { background: #fff; color: var(--primary, #4c6ef5); }
 .icon-btn {
@@ -102,6 +104,11 @@ body {
   .icon-btn { width: 30px; height: 30px; border-radius: 9px; font-size: 16px; }
   .diff-badge { padding: 4px 7px; font-size: 11px; }
   .auth-btn { padding: 4px 8px; }
+  /* 进一步压缩品牌区，保证主 LOGO（文字）在 320~360px 屏正常显示不折行/不溢出 */
+  .brand { gap: 6px; }
+  .brand .logo-img { width: 34px; height: 34px; }
+  .brand-text .logo-text { height: 18px; }
+  .brand-text p { display: none; }
 }
 @media (min-width: 720px) {
   .app-header { flex-direction: row; align-items: center; padding: 14px 22px; padding-top: calc(14px + env(safe-area-inset-top)); }
@@ -452,6 +459,12 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .hl:hover { background: #fff3bf; }
 .word-pop { position: fixed; z-index: 9999; max-width: 320px; animation: popIn .12s ease-out; }
 .word-pop .word-card { margin: 0; box-shadow: 0 10px 34px rgba(0,0,0,.20); }
+/* 单词弹卡底部「练一练」：一键进入本文对应的练习模式 */
+.wc-practice { display: flex; gap: 6px; padding: 10px 12px 12px; flex-wrap: wrap; }
+.wc-pr-btn { flex: 1 1 auto; min-width: 64px; border: none; border-radius: 9px; padding: 8px 6px; font-size: 13px; font-weight: 700; cursor: pointer; background: var(--primary); color: #fff; transition: background .15s, transform .08s; }
+.wc-pr-btn:active { transform: scale(.96); background: var(--primary-d); }
+.wc-pr-btn:nth-child(4) { background: var(--accent); }
+.wc-pr-btn:nth-child(4):active { background: #e08500; }
 @keyframes popIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* 阅读记 - 导读 */
@@ -766,7 +779,8 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .ai-card { display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 12px; cursor: pointer; box-shadow: var(--shadow); transition: transform .08s, box-shadow .15s, border-color .15s; }
 .ai-card:active { transform: scale(.98); }
 .ai-card:hover { border-color: var(--primary); }
-.ai-ico { font-size: 30px; line-height: 1; }
+.ai-ico { font-size: 30px; line-height: 1; color: var(--primary); }
+.ai-ico svg { width: 30px; height: 30px; display: block; }
 .ai-name { font-weight: 800; font-size: 16px; color: var(--text); }
 .ai-sub { font-size: 12px; color: var(--muted); text-align: center; }
 .ai-kp-list { display: flex; flex-direction: column; gap: 10px; }
