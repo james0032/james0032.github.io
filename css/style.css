@@ -95,15 +95,24 @@ body {
   transition: background .2s, transform .08s;
 }
 .auth-btn:active { transform: scale(.96); background: rgba(255,255,255,.32); }
-/* 手机端（≤560px）：顶栏拆成两行 —— 第一行整行放主 LOGO（图标 + 文字 + 副标题），第二行放右侧操作区。
-   此前登录态下「用户名芯片 + 难度徽标 + 菜单/设置」会挤占整行宽度，把品牌文字压到 14px，
-   ≤380px 还会直接隐藏副标题（.brand-text p）。改为两行后主 LOGO 独占一行，既能把 LOGO 放大，
-   也保证副标题「科学训练 高效学习」始终显示、不与右侧按钮重叠。 */
+/* 手机端（≤560px）：4 个操作按钮不再单独占第二行，而是移到主 LOGO 右侧、排成 2×2 ——
+   上排「登录 / 当前词书」，下排「菜单 / 设置」（DOM 顺序即网格顺序）。
+   顶栏由 2 行缩成 1 行，右侧原本空着的区域被利用起来，也不再出现「第二行按钮与 LOGO 错开」。
+   左侧 .brand 保持可收缩（min-width:0 + .logo-text 的 max-width:100%），窄屏优先压缩 LOGO 文字，
+   确保右侧 2×2 按钮组始终完整可见。 */
 @media (max-width: 560px) {
-  .header-top { flex-wrap: wrap; row-gap: 8px; }
-  .brand { flex: 1 1 100%; gap: 10px; }
-  /* 第二行按钮整体「左对齐」，与主 LOGO 左边缘对齐 —— 靠右会让两行错开显得别扭 */
-  .header-actions { flex: 1 1 100%; justify-content: flex-start; }
+  .header-top { flex-wrap: nowrap; row-gap: 0; }
+  .brand { flex: 1 1 auto; min-width: 0; gap: 10px; }
+  .header-actions {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    align-content: center;
+    align-items: center;
+    justify-content: end;
+    justify-items: end; /* 图标按钮靠本列「右缘」对齐，与上排胶囊按钮右对齐形成两列 */
+    gap: 6px;
+  }
   .brand .logo-img { width: 46px; height: 46px; border-radius: 12px; }
   .brand-text .logo-text { height: 26px; }
   .brand-text p { font-size: 11px; letter-spacing: .5px; }
@@ -735,7 +744,10 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 
 /* ---------- 登录 / 注册 ---------- */
 .user-chip { font-size: 13px; font-weight: 600; color: #fff; margin-right: 2px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
-/* 超窄屏：登录昵称缩短，给 Logo 文字让位（置于 .user-chip 定义之后以确保生效） */
+/* 手机端（≤560px）昵称收窄：顶栏改成「LOGO + 2×2 按钮组」同一行后左侧空间变紧，
+   沿用 120px 会把 LOGO 文字压小，收到 76px 可让 LOGO 保持原尺寸 */
+@media (max-width: 560px) { .user-chip { max-width: 76px; } }
+/* 超窄屏：登录昵称再缩短，给 Logo 文字让位（置于 .user-chip 定义之后以确保生效） */
 @media (max-width: 380px) { .user-chip { max-width: 64px; font-size: 12px; } }
 /* 用户芯片内的人形图标：emoji 为彩色字形无法着色，改用内联 SVG 并强制白色 */
 .user-chip .uico { width: 13px; height: 13px; fill: #fff; vertical-align: -2px; margin-right: 3px; flex: none; }
