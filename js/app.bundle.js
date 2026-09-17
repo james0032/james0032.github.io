@@ -2388,7 +2388,11 @@ const __mod_category = {
       return a.localeCompare(b, 'zh-CN');
     });
     if (!cats.length) {
-      view.innerHTML = '<div class="card">词库暂无数据，请到「导入」添加单词。</div>';
+      // 词库「核心重字段」（含 category）是分层懒加载的：还没到货时分组必然为空，
+      // 此时**不能**报「词库暂无数据」（会误导用户跑去导入）—— 页面会在数据到货后自动补正。
+      view.innerHTML = (APP.library && APP.library.__index && !APP._fullReady)
+        ? '<div class="card">分类数据加载中…稍后自动刷新。</div>'
+        : '<div class="card">词库暂无数据，请到「导入」添加单词。</div>';
       return;
     }
     // 高中分单元：统计单元数与待练数
@@ -2998,8 +3002,21 @@ const __mod_dictation = {
 
     // 开始/再来一轮：取「当天未听写过」的候选词；「听写全部」时取本范围全部，否则按单词量截取。
     // 已在候选池中排除当天听写过的词；本轮单词在真正呈现时才逐词记为「今天已听写」。
+    let pendingStart = false;  // 防止 core 未就绪时连点「开始」排队开两轮
     function beginRound() {
       stopAudio();
+      // 词库「核心重字段」（释义）是分层懒加载的：还没到货时候选池会被 `w.meaning` 过滤成空，
+      // 直接提示「没有可听写的单词」会误导用户 —— 先等数据到货再开轮（页面本身不阻塞）。
+      if (APP.library && APP.library.__index && !APP._fullReady && ctx.ensureFull) {
+        if (pendingStart) return;
+        pendingStart = true;
+        ctx.toast('词库详情加载中，马上开始…');
+        ctx.ensureFull().then(() => {
+          pendingStart = false;
+          if (!window.APP || window.APP.page === 'dictation') beginRound();
+        });
+        return;
+      }
       const allFull = candidates(true);   // 包含当天已听写的（用于判断范围内是否还有词）
       const all = candidates(false);       // 排除当天已听写的
       if (!allFull.length) {
@@ -4761,9 +4778,11 @@ const STAGE_DEFS = [
   { s: 5, name: '已掌握', cls: 'st5' },
 ];
 
-// 需要词库「重字段」的操作（练习出题要用释义/搭配）：未就绪则先 await full 再执行
+// 需要词库「重字段」的操作（练习出题要用释义/搭配）：core 未就绪时先补取再执行。
+// 注意：这里只是「点击后」的等待（带提示），不会阻塞页面渲染。
 function withFull(APP, ctx, fn) {
   if (APP.library && APP.library.__index && !APP._fullReady && ctx && ctx.ensureFull) {
+    if (ctx.toast) ctx.toast('正在准备释义数据…');
     ctx.ensureFull().then(fn);
     return;
   }
@@ -5011,13 +5030,12 @@ function renderMain(view, APP, ctx) {
 
 /* ---------- FSRS6 档位单词明细 ---------- */
 function renderFsrsDetail(view, APP, ctx) {
-  // 明细列表要展示每个词的释义（重字段），未就绪先等待再渲染
+  // 明细列表要展示每个词的释义（core 层）。**不阻塞渲染**：先按现有字段画出来，
+  // core 到货后若用户还没动过手（没点词卡/没返回），再补画一次把释义填上。
   if (APP.library && APP.library.__index && !APP._fullReady && ctx && ctx.ensureFull) {
-    view.innerHTML = '<div class="card" style="text-align:center;padding:36px 16px">'
-      + '<div style="font-size:28px">⏳</div>'
-      + '<div style="margin-top:10px;opacity:.7">词库详情加载中…</div></div>';
-    ctx.ensureFull().then(() => { if (APP.page === 'overview' && _sub === 'fsrs') renderFsrsDetail(view, APP, ctx); });
-    return;
+    ctx.ensureFull().then(() => {
+      if (APP.page === 'overview' && _sub === 'fsrs' && !(ctx.viewTouched && ctx.viewTouched())) renderFsrsDetail(view, APP, ctx);
+    });
   }
   const lib = APP.library, p = APP.progress;
   const s = _subArg;
@@ -6773,46 +6791,77 @@ function decodeIndexBooks(emb) {
   }
 }
 
-// ── 词库重字段的按需加载 ─────────────────────────────────────────────
-// 首屏 bundle 只内嵌紧凑索引（word/difficulty/books/inflect），
-//   meaning / collocations / example / phonetic / img / category / pep … 全部外置在
-//   public/js/library-full.js（window.__HV_FULL，键 = 小写单词）。
-// 首屏渲染后后台预取；进入非概览页 / 打开词卡 / 展开概览明细前 await 本函数，保证字段完整。
+// ── 词库重字段的分层按需加载 ─────────────────────────────────────────
+// 首屏 bundle 只内嵌紧凑索引（word/difficulty/books/inflect），其余字段分两层外置：
+//   · lib-core.js → window.__HV_CORE  释义 / 音标 / 分类 / PEP / 专升本
+//       非概览模块**渲染与出题**都要用（听写候选池按 meaning 过滤、分类记按 category 统计…）。
+//       首屏渲染后立即后台拉取；index.html 里还挂了低优先级 preload 让它早点起跑。
+//   · lib-extra.js → window.__HV_EXTRA 搭配 / 例句 / 拼读
+//       只有单词卡用，打开词卡时才拉，不跟功能页抢带宽。
+// 键 = 小写单词。合并是**就地 Object.assign**：词库里的对象引用不变，
+// 各处已持有的引用（选中队列、错词本映射…）自动跟着变完整，无需重新查找。
 // 用「动态 <script>」而非 fetch：GitHub Pages 与 file:// 双击打开都能用（无 CORS 限制）。
-let _fullPromise = null;
-function ensureFullLibrary() {
-  if (APP._fullReady) return Promise.resolve();
-  if (!APP.library || !APP.library.__index) { APP._fullReady = true; return Promise.resolve(); }
-  if (_fullPromise) return _fullPromise;
-  _fullPromise = new Promise((resolve) => {
+//
+// ⚠️ 铁律：调用方**必须先渲染、后补正**，绝不能 await 完再画页面。
+//    R8 就是因为「进功能页前先 await 词库详情」，慢网下除概览外全卡在「词库详情加载中」转圈。
+//    正确做法见下面 _renderPage / goto：立刻按现有字段画出来，层到货后再自动补正一次。
+let _corePromise = null;
+let _extraPromise = null;
+
+function loadLibLayer(globalVar, file, readyFlag) {
+  if (APP[readyFlag]) return Promise.resolve();
+  if (!APP.library || !APP.library.__index) { APP[readyFlag] = true; return Promise.resolve(); }
+  const pending = globalVar === '__HV_CORE' ? _corePromise : _extraPromise;
+  if (pending) return pending;
+  const p = new Promise((resolve) => {
     let settled = false;
-    const failFull = (err) => {
-      if (settled) return; settled = true;
-      console.warn('[full] 重字段加载失败（降级为索引字段，释义/搭配暂缺，功能仍可用）:', err && err.message);
-      APP._fullReady = true; _fullPromise = null; resolve();
-    };
-    const merge = () => {
-      if (settled) return; settled = true;
-      try {
-        const fm = window.__HV_FULL || {};
-        for (const w of (APP.library.words || [])) {
-          const f = fm[String(w.word).toLowerCase()];
-          if (f) Object.assign(w, f);
-        }
-      } catch (e) { console.warn('[full] 合并重字段失败:', e && e.message); }
-      APP._fullReady = true;
+    const done = (ok, err) => {
+      if (settled) return;
+      settled = true;
+      const map = window[globalVar] || {};
+      if (!ok) {
+        console.warn('[lib] ' + file + ' 加载失败，已降级为索引字段（部分释义/搭配暂缺）:', err && err.message);
+      } else {
+        try {
+          for (const w of (APP.library.words || [])) {
+            const f = map[String(w.word).toLowerCase()];
+            if (f) Object.assign(w, f);
+          }
+        } catch (e) { console.warn('[lib] 合并 ' + file + ' 失败:', e && e.message); }
+      }
+      try { window[globalVar] = null; } catch (e) { /* 合并完即释放，省内存 */ }
+      APP[readyFlag] = true;
+      if (globalVar === '__HV_CORE') _corePromise = null; else _extraPromise = null;
       resolve();
     };
-    if (window.__HV_FULL) return merge();
+    if (window[globalVar]) return done(true);
     const s = document.createElement('script');
-    s.src = 'js/library-full.js?v=' + (window.__HV_VER || '');
+    s.src = 'js/' + file + '?v=' + (window.__HV_VER || '');
     s.async = true;
-    s.onload = () => { if (window.__HV_FULL) merge(); else failFull(new Error('library-full 未挂载 __HV_FULL')); };
-    s.onerror = () => failFull(new Error('library-full 加载失败'));
-    document.head.appendChild(s);
+    s.onload = () => { if (window[globalVar]) done(true); else done(false, new Error(file + ' 未挂载 ' + globalVar)); };
+    s.onerror = () => done(false, new Error(file + ' 网络加载失败'));
+    (document.head || document.documentElement).appendChild(s);
   });
-  return _fullPromise;
+  if (globalVar === '__HV_CORE') _corePromise = p; else _extraPromise = p;
+  return p;
 }
+
+// 核心重字段（释义/音标/分类/PEP/专升本）：非概览模块渲染与出题依赖，首屏后立即预取
+function ensureCore() { return loadLibLayer('__HV_CORE', 'lib-core.js', '_fullReady'); }
+// 附加字段（搭配/例句/拼读）：只有单词卡需要，进词卡时才拉
+function ensureExtra() { return loadLibLayer('__HV_EXTRA', 'lib-extra.js', '_extraReady'); }
+// 兼容旧调用名：模块里的 ctx.ensureFull 一律指「核心重字段」
+const ensureFullLibrary = ensureCore;
+
+// 渲染 / 补正 相关的实时状态
+let _pageGen = 0;        // 页面渲染代次：换页即 +1
+let _viewTouched = false; // 本页渲染后用户是否已交互（交互过就绝不自动重渲染，免得打断做题）
+
+// 一进页面就依赖「核心重字段」的模块：缺字段时给细提示条，并在 core 到货后自动补正
+const CORE_PAGES = { dictation: 1, category: 1, stats: 1, notebook: 1, wrongbook: 1, wordji: 1 };
+// 额外依赖 extra 层（搭配/例句）的模块：到货后自动补正
+const EXTRA_PAGES = { notebook: 1, wrongbook: 1, wordji: 1 };
+
 
 // 本地装配的收尾：索引构建 / 进度字段补齐 / 清洗。全部为同步计算（合计约 150ms）。
 function finalizeLocal() {
@@ -7176,6 +7225,7 @@ function resolveWord(key) {
 }
 
 // 统一单词卡片弹窗（支持屈折/复数还原；未找到时引导跳转有道）
+let _wcSeq = 0;   // 词卡代次：切换/关闭词卡后，迟到的分层数据不再重画旧卡
 function showWordCard(word) {
   const w = resolveWord(word);
   const m = openModal('<h3>' + IC.book + '单词卡片</h3><div id="wc"></div>', { center: true });
@@ -7184,6 +7234,7 @@ function showWordCard(word) {
     wc.innerHTML = wordCardNotFoundHTML(word);
     return;
   }
+  const seq = ++_wcSeq;
   const paint = () => {
     wc.innerHTML = wordCardHTML(w, { showNote: true });
     bindWordCardEvents(wc, currentCtx || {});
@@ -7201,13 +7252,18 @@ function showWordCard(word) {
       wc.appendChild(bar);
     }
   };
-  // 单词卡要展示释义/搭配/例句/音标等重字段：未就绪则先取 full 再画
-  //（w 是词库里同一个对象，ensureFullLibrary 就地 Object.assign 合并后即带全字段）
+  // 单词卡要展示释义/搭配/例句/音标等重字段，但**不阻塞**：
+  //  · core（释义/音标）很小且首屏后已预取，通常已就绪；万一没有就先给轻提示再补画
+  //  · extra（搭配/例句/拼读）较重，先画出卡片主体，到货后原地重画一次
+  // （w 是词库里同一个对象，Object.assign 就地合并后即带全字段）
   if (APP.library && APP.library.__index && !APP._fullReady) {
     wc.innerHTML = '<div style="text-align:center;padding:22px 12px;opacity:.7">词库详情加载中…</div>';
-    ensureFullLibrary().then(paint);
+    ensureCore().then(() => { if (seq === _wcSeq) paint(); });
   } else {
     paint();
+  }
+  if (APP.library && APP.library.__index && !APP._extraReady) {
+    ensureExtra().then(() => { if (seq === _wcSeq && wc.isConnected !== false) paint(); });
   }
 }
 
@@ -8338,6 +8394,33 @@ async function fetchJSON(url, timeoutMs) {
     clearTimeout(t);
   }
 }
+function ctxObj() {
+  return { playUK, playUS, toast, openModal, closeModal, refreshHeader, completeRound, recordWrongAnswer, recordWrongQuestion, recordTask, recordReadTask, markMastered, toggleNotebook, findWord, saveProgress, completeSession, completeReadingSession, isMastered, inWrongBook, matchDifficulty, matchBookScope, inScope, difficultyOf, difficultyLevel, openSettings, showWordCard, todayStr, loadReadings, ensureFull: ensureFullLibrary, ensureExtra, fullReady: () => !!APP._fullReady, extraReady: () => !!APP._extraReady, viewTouched: () => _viewTouched, settings: APP.settings };
+}
+
+// 只负责「把当前页画出来」。
+// 词库重字段是分层加载的，这里**绝不**在渲染前等网络：先按已有字段渲染（缺的位置自然留空），
+// 相应层到货后再由 goto 自动补正一次。这样即使词库详情要下十几秒，功能页也是
+// 「立刻可用 + 稍后变完整」，不会出现整页转圈。
+function _renderPage(page) {
+  const view = document.getElementById('view');
+  const mod = APP.modules[page];
+  if (!(mod && mod.render)) return;
+  currentCtx = ctxObj();
+  _viewTouched = false;
+  try {
+    mod.render({ view, APP, ctx: currentCtx });
+  } catch (e) {
+    console.error('[goto] 模块渲染失败:', page, e);
+    view.innerHTML = '<div class="card">' + IC.alertSm + '该模块渲染出错，请刷新页面重试。<br/>如反复出现，请反馈具体模块（' + (page || '') + '）。</div>';
+    return;
+  }
+  // 核心重字段还没到位：只加一条细提示（不是整页转圈），数据到货后本页会自动补正
+  if (CORE_PAGES[page] && APP.library && APP.library.__index && !APP._fullReady && view.insertAdjacentHTML) {
+    view.insertAdjacentHTML('afterbegin', '<div class="lib-hint">词库详情加载中…本页数据会自动补全</div>');
+  }
+}
+
 function goto(page) {
   APP.page = page;
   // 离开当前页：先停快筛听写的播报计时/自动跳转，再暂停所有音频
@@ -8353,32 +8436,30 @@ function goto(page) {
       + '<div style="margin-top:10px;opacity:.7">词库加载中，请稍候…</div></div>';
     return;
   }
-  // 非概览页需要词库「重字段」（释义/搭配/例句/音标…）：尚未就绪则先等 full 加载完再渲染。
-  // 概览是首屏，仅靠索引字段即可渲染，**绝不**在此 gate（否则又慢回去）。
-  // 加载失败时 ensureFullLibrary 会把 _fullReady 置 true 并 resolve，故不会死循环。
-  if (page !== 'overview' && APP.library && APP.library.__index && !APP._fullReady) {
-    view.innerHTML = '<div class="card" style="text-align:center;padding:36px 16px">'
-      + '<div style="font-size:28px">⏳</div>'
-      + '<div style="margin-top:10px;opacity:.7">词库详情加载中，请稍候…</div></div>';
-    ensureFullLibrary().then(() => { if (APP.page === page) goto(page); });
-    return;
-  }
-  const mod = APP.modules[page];
-  if (mod && mod.render) {
-    const ctxObj = { playUK, playUS, toast, openModal, closeModal, refreshHeader, completeRound, recordWrongAnswer, recordWrongQuestion, recordTask, recordReadTask, markMastered, toggleNotebook, findWord, saveProgress, completeSession, completeReadingSession, isMastered, inWrongBook, matchDifficulty, matchBookScope, inScope, difficultyOf, difficultyLevel, openSettings, showWordCard, todayStr, loadReadings, ensureFull: ensureFullLibrary, settings: APP.settings };
-    currentCtx = ctxObj;
-    try {
-      mod.render({ view, APP, ctx: ctxObj });
-    } catch (e) {
-      console.error('[goto] 模块渲染失败:', page, e);
-      view.innerHTML = '<div class="card">' + IC.alertSm + '该模块渲染出错，请刷新页面重试。<br/>如反复出现，请反馈具体模块（' + (page || '') + '）。</div>';
+  const gen = ++_pageGen;
+  _renderPage(page);
+  refreshHeader();
+  // 分层补正：core / extra 到货后，若用户还停在本页、且渲染后没动过手，就重渲染一次把数据补全。
+  // 之所以不阻塞渲染，是因为「等词库详情」在慢网下要几十秒 —— 让用户干等一个转圈是最差的选择。
+  if (APP.library && APP.library.__index) {
+    if (CORE_PAGES[page] && !APP._fullReady) {
+      ensureCore().then(() => { if (APP.page === page && _pageGen === gen && !_viewTouched) { _renderPage(page); refreshHeader(); } });
+    }
+    if (EXTRA_PAGES[page] && !APP._extraReady) {
+      ensureExtra().then(() => { if (APP.page === page && _pageGen === gen && !_viewTouched) { _renderPage(page); refreshHeader(); } });
     }
   }
-  refreshHeader();
 }
 
 function init() {
   document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => goto(t.dataset.page)));
+  // 「用户是否已在本页动过手」：分层补正只在本页「渲染后无人操作」时才自动重渲染，
+  // 免得做题做到一半被重画打断。（#view 之外的底部导航 / 顶栏按钮不计入。）
+  const viewEl = document.getElementById('view');
+  if (viewEl && viewEl.addEventListener) {
+    const touch = () => { _viewTouched = true; };
+    ['pointerdown', 'click', 'input', 'keydown', 'change'].forEach((ev) => viewEl.addEventListener(ev, touch, true));
+  }
   const gear = document.getElementById('settingsBtn');
   if (gear) gear.addEventListener('click', () => openSettings());
   // 标题栏「更多」菜单：统计 / 导入
@@ -8427,12 +8508,14 @@ function init() {
   // ③ 空闲时预取阅读文章（约 1MB gzip），不跟首屏抢带宽；点进「阅读记」时通常已就绪
   const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1500));
   idle(() => { try { loadReadings(); } catch (e) { /* 静默 */ } });
-  // ④ 首屏渲染完成后，后台预取词库「重字段」（约 4.5MB gzip）：与用户浏览概览并行，
-  //    待其点进功能页 / 打开词卡时通常已就绪；未就绪由 goto / showWordCard 兜底等待。
+  // ④ 首屏已画完 → 立刻后台预取「核心重字段」（约 2MB gzip）：与用户看概览并行，
+  //    点进任何功能页 / 打开词卡时通常已就绪；万一没就绪也**不再卡页面**
+  //    （goto 先渲染、后补正，见 _renderPage）。extra（搭配/例句）更重，不在此预取，
+  //    等用户进生词本/错词本/单词记或打开词卡时按需拉。
   //    尊重「省流量 / 2G」连接：此时不预取，改由首次交互按需加载。
   const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   const saveData = !!(conn && (conn.saveData || /(^|-)2g$/.test(conn.effectiveType || '')));
-  setTimeout(() => { if (saveData) return; try { ensureFullLibrary(); } catch (e) { /* 静默 */ } }, 250);
+  if (!saveData) { try { ensureCore(); } catch (e) { /* 静默 */ } }
 }
 
 // 启动即同步填充安全默认值（loadSettings/defaultProgress 均为同步函数）：
