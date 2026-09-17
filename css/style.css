@@ -953,3 +953,17 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .dpk-ok { color: #fff; padding: 9px 20px; background: linear-gradient(160deg, #3763fd, #2e5cfc); }
 .dpk-ok:active { opacity: .88; }
 
+/* ---------- 首屏骨架（index.html 内置，bundle 下载/解析期间占位） ----------
+   bundle 约 6.9MB(gzip)，手机上要下十几秒。旧版这段时间是纯空白，用户会以为卡死；
+   骨架先撑出概览的版式 + 一句「正在准备」，把「等待」变成「可见的加载中」。 */
+.boot-skel { padding: 14px 12px 26px; }
+.boot-card { background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(20, 40, 90, .06); }
+.boot-line { height: 14px; border-radius: 7px; }
+.boot-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 14px; }
+.boot-grid.three { grid-template-columns: repeat(3, 1fr); }
+.boot-box { height: 62px; border-radius: 10px; }
+.boot-line, .boot-box { background: linear-gradient(90deg, #eef2f9 25%, #e1e9f7 37%, #eef2f9 63%); background-size: 400% 100%; animation: bootShimmer 1.4s ease infinite; }
+.boot-tip { text-align: center; color: #8a95ab; font-size: 13px; padding: 4px 0 2px; letter-spacing: .3px; }
+@keyframes bootShimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .boot-line, .boot-box { animation: none; } }
+
