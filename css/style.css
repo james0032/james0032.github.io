@@ -954,8 +954,8 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .dpk-ok:active { opacity: .88; }
 
 /* ---------- 首屏骨架（index.html 内置，bundle 下载/解析期间占位） ----------
-   bundle 约 6.9MB(gzip)，手机上要下十几秒。旧版这段时间是纯空白，用户会以为卡死；
-   骨架先撑出概览的版式 + 一句「正在准备」，把「等待」变成「可见的加载中」。 */
+   首屏 bundle 现在只有「代码 + 紧凑索引」约 0.67MB(gzip)（重字段分层外置），
+   但慢网下仍需几秒；这段时间给出版式占位，把「空白」变成「可见的加载中」。 */
 .boot-skel { padding: 14px 12px 26px; }
 .boot-card { background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(20, 40, 90, .06); }
 .boot-line { height: 14px; border-radius: 7px; }
@@ -966,4 +966,22 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .boot-tip { text-align: center; color: #8a95ab; font-size: 13px; padding: 4px 0 2px; letter-spacing: .3px; }
 @keyframes bootShimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .boot-line, .boot-box { animation: none; } }
+
+/* ---------- 词库详情分层的「细提示条」 ----------
+   重字段（释义/音标/分类/PEP）分层外置，进入功能页时若该层还没到货，
+   只在页面顶部加一条细提示，**不阻塞页面渲染**：页面照常可用，数据到货后自动补全。
+   （R8 的教训：整页转圈「词库详情加载中，请稍候…」在慢网下会把除概览外的模块全卡死。） */
+.lib-hint {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 12px; padding: 8px 12px;
+  border-radius: 10px; background: #eef3ff; color: #3f5a9b;
+  font-size: 13px; line-height: 1.4; letter-spacing: .2px;
+}
+.lib-hint::before {
+  content: ''; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid #7d9bff; border-top-color: transparent;
+  animation: libHintSpin .8s linear infinite;
+}
+@keyframes libHintSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .lib-hint::before { animation: none; } }
 
