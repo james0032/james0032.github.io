@@ -74,9 +74,6 @@ body {
   .diff-badge { font-size: 12px; padding: 5px 10px; }
   .icon-btn { width: 36px; height: 36px; border-radius: 11px; font-size: 18px; }
 }
-.header-stat { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; font-size: 12px; opacity: .95; }
-.header-stat .stat-pill { display: inline-flex; align-items: center; gap: 3px; background: rgba(255,255,255,.14); padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
-.header-stat b { font-size: 14px; }
 .diff-badge { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; white-space: nowrap; max-width: 34vw; overflow: hidden; text-overflow: ellipsis; cursor: pointer; flex: none; }
 .diff-badge.all { background: rgba(255,255,255,.18); color: #fff; }
 .diff-badge.active { background: #fff; color: var(--primary, #4c6ef5); }
@@ -98,23 +95,28 @@ body {
   transition: background .2s, transform .08s;
 }
 .auth-btn:active { transform: scale(.96); background: rgba(255,255,255,.32); }
-/* 超窄屏（≤380px）：压缩右侧操作区，给左侧 Logo 文字留出空间，避免拥挤/重叠 */
+/* 手机端（≤560px）：顶栏拆成两行 —— 第一行整行放主 LOGO（图标 + 文字 + 副标题），第二行放右侧操作区。
+   此前登录态下「用户名芯片 + 难度徽标 + 菜单/设置」会挤占整行宽度，把品牌文字压到 14px，
+   ≤380px 还会直接隐藏副标题（.brand-text p）。改为两行后主 LOGO 独占一行，既能把 LOGO 放大，
+   也保证副标题「科学训练 高效学习」始终显示、不与右侧按钮重叠。 */
+@media (max-width: 560px) {
+  .header-top { flex-wrap: wrap; row-gap: 8px; }
+  .brand { flex: 1 1 100%; gap: 10px; }
+  .header-actions { flex: 1 1 100%; justify-content: flex-end; }
+  .brand .logo-img { width: 46px; height: 46px; border-radius: 12px; }
+  .brand-text .logo-text { height: 26px; }
+  .brand-text p { font-size: 11px; letter-spacing: .5px; }
+}
+/* 超窄屏（≤380px）：只压缩右侧操作区尺寸，不动 Logo 与副标题 */
 @media (max-width: 380px) {
   .header-actions { gap: 5px; }
   .icon-btn { width: 30px; height: 30px; border-radius: 9px; font-size: 16px; }
   .diff-badge { padding: 4px 7px; font-size: 11px; }
   .auth-btn { padding: 4px 8px; }
-  /* 进一步压缩品牌区，保证主 LOGO（文字）在 320~360px 屏正常显示不折行/不溢出 */
-  .brand { gap: 6px; }
-  .brand .logo-img { width: 34px; height: 34px; }
-  .brand-text .logo-text { height: 18px; }
-  .brand-text p { display: none; }
 }
 @media (min-width: 720px) {
   .app-header { flex-direction: row; align-items: center; padding: 14px 22px; padding-top: calc(14px + env(safe-area-inset-top)); }
   .header-top { flex: 1; min-width: 0; }
-  .header-stat { justify-content: flex-end; flex: none; gap: 12px; font-size: 13px; }
-  .header-stat b { font-size: 15px; }
 }
 .diff-opts { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
 .diff-opt {
