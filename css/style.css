@@ -754,6 +754,13 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .aiq-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .aiq-actions .btn { margin-top: 0; }
 
+/* ---------- FSRS 难度自评（Again/Hard/Good/Easy） ---------- */
+.fsrs-rate-tip { font-size: 13px; color: var(--text); opacity: .8; margin-bottom: 8px; }
+.fsrs-rate-row { display: flex; gap: 8px; }
+.fsrs-rate { flex: 1; border: 2px solid var(--line); background: var(--card); border-radius: 12px; padding: 11px 8px; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: border .15s, background .15s, color .15s; }
+.fsrs-rate:hover { border-color: #c5d2f0; }
+.fsrs-rate.on { border-color: var(--primary); background: var(--primary); color: #fff; }
+
 /* ---------- AI 练：菜单 / 知识点卡片 ---------- */
 .ai-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ai-card { display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 12px; cursor: pointer; box-shadow: var(--shadow); transition: transform .08s, box-shadow .15s, border-color .15s; }
