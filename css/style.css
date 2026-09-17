@@ -102,7 +102,8 @@ body {
 @media (max-width: 560px) {
   .header-top { flex-wrap: wrap; row-gap: 8px; }
   .brand { flex: 1 1 100%; gap: 10px; }
-  .header-actions { flex: 1 1 100%; justify-content: flex-end; }
+  /* 第二行按钮整体「左对齐」，与主 LOGO 左边缘对齐 —— 靠右会让两行错开显得别扭 */
+  .header-actions { flex: 1 1 100%; justify-content: flex-start; }
   .brand .logo-img { width: 46px; height: 46px; border-radius: 12px; }
   .brand-text .logo-text { height: 26px; }
   .brand-text p { font-size: 11px; letter-spacing: .5px; }
