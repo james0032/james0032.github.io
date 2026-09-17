@@ -4,11 +4,15 @@
   <meta charset="UTF-8" data-page-node-id="VDkJowS8NQEfnfxDOKb6LG" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" data-page-node-id="jvWs6bSh6julsaxIqtqw8X" />
   <title>搞定英语 · 高考词汇轻松背</title>
-  <script>window.__HV_VER = '20260918a';</script>
-  <link rel="icon" type="image/png" href="/img/favicon.png?v=20260918a" data-page-node-id="ZI7cMj5JQBTGLOYqFQMj2G" />
-  <link rel="stylesheet" href="/css/style.css?v=20260918a" data-page-node-id="EnH36yhjP9QGUBELqmxA8N" />
-  <!-- bundle 是首屏最大的依赖（约 6.9MB gzip），提前发起请求，别等 HTML 解析到脚本标签 -->
-  <link rel="preload" as="script" href="/js/app.bundle.js?v=20260918a" fetchpriority="high" data-page-node-id="ZrQ7lPmBnKx2WdEuYsT4vH" />
+  <script>window.__HV_VER = '20260918b';</script>
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=20260918b" data-page-node-id="ZI7cMj5JQBTGLOYqFQMj2G" />
+  <link rel="stylesheet" href="/css/style.css?v=20260918b" data-page-node-id="EnH36yhjP9QGUBELqmxA8N" />
+  <!-- 首屏 bundle 只含「代码 + 紧凑索引」（约 0.67MB gzip），提前发起请求 -->
+  <link rel="preload" as="script" href="/js/app.bundle.js?v=20260918b" fetchpriority="high" data-page-node-id="ZrQ7lPmBnKx2WdEuYsT4vH" />
+  <!-- 词库「核心重字段」（释义/音标/分类/PEP，约 2MB gzip）：非概览模块渲染就要用。
+       低优先级预取 —— 不与首屏 bundle 抢带宽，但不必等首屏渲染完才开始下，
+       等用户切到听写记/分类记时通常已就绪。低带宽（省流量/2G）下由运行时按需加载。 -->
+  <link rel="preload" as="script" href="/js/lib-core.js?v=20260918b" fetchpriority="low" />
   <style>
     /* 播放器兜底样式（内联，防 CSS 缓存导致布局失效）：按钮与倍速同行，进度条独立一行并可拖动 */
     .lst-player { gap: 8px; flex-wrap: wrap; row-gap: 10px; padding: 12px 14px; }
@@ -48,8 +52,8 @@
     </header>
 
     <main id="view" class="view" data-page-node-id="8ho1WQZ5jJUPWGk4kMyquo">
-      <!-- 首屏骨架：bundle（约 6.9MB gzip）下载 + 解析期间先给出视觉反馈，
-           避免用户对着空白页以为应用卡死。脚本运行后会被首屏内容整体替换。 -->
+      <!-- 首屏骨架：bundle 下载 + 解析期间先给出视觉反馈，避免用户对着空白页以为应用卡死。
+           脚本运行后会被首屏内容整体替换。 -->
       <div class="boot-skel" data-page-node-id="Bs1KeLtA0nMq3XvPoZy7gT">
         <div class="boot-card">
           <div class="boot-line" style="width:38%" data-page-node-id="BskL1aQw2Zx9MnBvT4rY6p"></div>
@@ -88,11 +92,13 @@
   <div id="modalRoot" data-page-node-id="aygXt51w6PmHzjjfdry2JI"></div>
   <div id="toast" class="toast" data-page-node-id="2P7d32NQBTwXbuiNzeHLMg"></div>
 
-  <!-- 单文件经典脚本：内嵌词库 + 安全 fetch，file:// 双击打开也能渲染内容 -->
-  <script src="/js/app.bundle.js?v=20260918a" defer></script>
+  <!-- 单文件经典脚本：内嵌紧凑索引 + 安全 fetch，file:// 双击打开也能渲染内容。
+       词库重字段分两层外置：lib-core.js（功能页必需，HTML 已低优先级 preload）、
+       lib-extra.js（词卡专用，打开词卡时才拉），见 app.js loadLibLayer。 -->
+  <script src="/js/app.bundle.js?v=20260918b" defer></script>
   <script>
   /* Service Worker：GitHub Pages 强制 Cache-Control: max-age=600（仅 10 分钟），
-     导致每次冷启动都要重新下载约 6.9MB 的 bundle。SW 缓存不受 max-age 约束，
+     导致每次冷启动都要重新下载 bundle。SW 缓存不受 max-age 约束，
      命中后本地直读，二次进入近乎瞬开；发版换 ?v= 即换 URL，自然拿到新版本。
      file:// 下不支持 SW，静默跳过。 */
   (function () {
