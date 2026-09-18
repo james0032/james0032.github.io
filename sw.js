@@ -88,10 +88,13 @@ async function audioProxy(req, url) {
     const hit = await cache.match(req, { ignoreVary: true });
     if (hit) return hit;
   }
-  // 下划线开头的是仓库里的真实静态文件（如 _probe.mp3 自检对照组），交给静态缓存
-  const m = url.pathname.match(/^\/audio\/(?!_)(.+)\.mp3$/);
+  // 仓库里提交的静态对照文件（probe.mp3，用于「设置→通道诊断」的同源·静态对照组），
+  // 直接走静态缓存，不经有道代理——用于验证「内核能否播放同源静态文件」这一维度。
+  // 文件名必须以普通字母开头：GitHub Pages 默认跑 Jekyll，会静默丢弃 _ 开头的文件（_probe.mp3 曾因此 404）。
+  const m = url.pathname.match(/^\/audio\/(.+)\.mp3$/);
   if (!m) return cacheFirst(req);
   const word = decodeURIComponent(m[1]);
+  if (word === 'probe') return cacheFirst(req);   // 静态对照文件：同源、走 Pages，不经有道
   const type = url.searchParams.get('t') === '1' ? '1' : '2';
   const target = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(word) + '&type=' + type;
   const ctrl = new AbortController();
