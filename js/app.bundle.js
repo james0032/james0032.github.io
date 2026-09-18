@@ -7783,21 +7783,32 @@ async function openSettings(onClose) {
   const ttsOut = m.querySelector('#ttsTestOut');
   const ttsTestBtn = m.querySelector('#ttsTest');
   if (ttsTestBtn) ttsTestBtn.onclick = async () => {
-    ttsOut.textContent = '正在分层实测各音源（网络 / 解码 / 出声）…';
+    ttsOut.textContent = '正在分层实测（先真播一次 → 网络 → 解码 → 通道诊断），约需 5~15 秒…';
     ttsTestBtn.disabled = true;
     try {
       const r = await APP._tts.test('hello');
       const whyTxt = { timeout: '超时', blocked: '需手势', unsupported: '内核不支持音频', decode: '解码失败', network: '网络失败', error: '加载失败', net: '链路不通', 'no-fetch': '无 fetch' };
       const cell = (x) => (x.ok ? '✅ ' : '❌ ') + x.label + (x.ms ? '（' + x.ms + 'ms' : '') + (x.ok ? '）' : (x.why ? '·' + (whyTxt[x.why] || x.why) : '') + (x.code ? '·码' + x.code : '') + '）');
-      const playTxt = r.play ? cell(r.play) : '—（没有可解码的音源，直接走系统语音）';
+      const playTxt = r.play ? cell(r.play) : '—';
+      const dTxt = {
+        'remote-blocked': '跨域远端媒体被内核拒绝，同源通道可用 → <b>已自动切同源通道</b>，无需处理',
+        'local-unavailable': '同源通道不可用（SW 未接管/未部署）→ 仍走直连',
+        'no-media': '内核完全禁止媒体播放 → 请在夸克「设置」里<b>关闭省流模式 / 无图模式</b>后重试；仍不行就换 QQ 浏览器 / Chrome',
+        'all-ok': '各通道均可用'
+      };
+      const diagHtml = (r.diag && r.diag.list && r.diag.list.length)
+        ? '<b>🧪 通道诊断</b>　' + r.diag.list.map((x) => (x.ok ? '✅ ' : '❌ ') + x.label + (x.ms ? '(' + x.ms + 'ms)' : '') + (!x.ok && x.code ? '(码' + x.code + ')' : '') + (!x.ok && !x.code && x.why ? '(' + (whyTxt[x.why] || x.why) + ')' : '')).join('　') +
+          '<br><span style="opacity:.85">→ ' + (dTxt[r.diag.verdict] || r.diag.verdict) + '</span><br>'
+        : '';
       const sysTxt = r.system ? ('✅ 可用' + (r.voices ? '（' + r.voices + ' 个语音包）' : '（语音包未就绪）')) : '❌ 不可用（内核无 Web Speech）';
       ttsOut.innerHTML =
         '<b>🌐 网络</b>　' + r.net.map((x) => (x.ok ? '✅ ' : '❌ ') + x.label).join('　') + '<br>' +
         '<b>🔉 解码</b>　' + r.list.map(cell).join('　') + '<br>' +
-        '<b>🔊 出声</b>　' + playTxt + '<br>' +
-        '<b>🧭 引擎通道</b>　' + (r.engine === 'quark/uc' ? '夸克/UC（已启用「挂载优先」通道修复无发音）' : '标准（游离优先通道）') + '<br>' +
+        '<b>🔊 真播</b>　' + playTxt + '<br>' +
+        diagHtml +
+        '<b>🧭 引擎通道</b>　' + (r.engine === 'quark/uc' ? '夸克/UC（挂载优先）' : '标准（游离优先）') + '　·　同源SW：' + (r.sw ? '✅ 已接管' : '— 未接管') + '<br>' +
         '<b>🗣 系统语音</b>　' + sysTxt + '<br>' +
-        '<span style="opacity:.72">理想结果：网络 ✅ → 解码 ✅ → 出声 ✅（有声就结束，系统语音只在网络音源全挂时才用）。若「网络」就 ❌，说明这台设备连不上该域名，需换网络或锁「系统语音」。</span>';
+        '<span style="opacity:.72">理想结果：网络 ✅ → 解码 ✅ → 真播 ✅（出声即结束，系统语音只在网络音源全挂时才用）。夸克若「同源·SW ✅」而「直连 ❌」，是内核拦跨域媒体，属正常，已自动改走同源通道。</span>';
     } catch (e) { ttsOut.textContent = '自检失败：' + (e && e.message); }
     ttsTestBtn.disabled = false;
   };
@@ -8136,8 +8147,21 @@ const TTS_SOURCES = [
   { id: 'youdao3', tier: 1, label: '有道 le 备线', mk: (w, t) => 'https://dict.youdao.com/dictvoice?le=en&audio=' + encodeURIComponent(w) + '&type=' + t },
   { id: 'baidu', tier: 2, label: '兜底网络音源', mk: (w) => 'https://fanyi.baidu.com/gettts?lan=en&text=' + encodeURIComponent(w) + '&spd=3&source=web' },
 ];
+/* 「同源音频」通道：把跨域的有道音频伪装成「本站同源资源」——
+   sw.js 拦截 /audio/<word>.mp3 并在内部 no-cors 取有道，媒体元素收到 opaque 响应
+   （浏览器实测可正常解码播放）。存在的意义：夸克/UC 内核会**本机直接拒绝**加载
+   「跨域远端媒体」（瞬间 MEDIA_ERR_SRC_NOT_SUPPORTED·码 4，连请求都不发），
+   而同源 URL 不在它的拦截范围内 → 这条路能在夸克上出声，且零仓库体积
+   （不用给一万多个词预存 mp3）。非夸克环境仍走「直连有道」首选（更省一跳）。
+   ⚠️ 需要 SW 已接管页面，否则 /audio/* 会 404（用 ttsLocalReady() 把关）。 */
+const TTS_LOCAL_SRC = { id: 'local', tier: 0, local: true, label: '本地同源(经SW)', mk: (w, t) => '/audio/' + encodeURIComponent(String(w).toLowerCase().trim()) + '.mp3?t=' + t };
+const TTS_LOCAL_STATIC = { id: 'localFile', tier: 0, local: true, label: '同源静态', mk: () => '/audio/_probe.mp3' };
 const ttsBad = {};  // 本会话失败次数：>=2 不再优先尝试（避免每个词都白等一轮）
 const ttsStat = {}; // 每个音源的 ok/fail/ms 统计（设置页自检与自动化测试都读它）
+
+function ttsLocalReady() {
+  try { return !!(typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.controller); } catch (e) { return false; }
+}
 
 function ttsSaved() { try { return localStorage.getItem(TTS_PREF_KEY) || ''; } catch (e) { return ''; } }
 function ttsRemember(id) { try { if (id) localStorage.setItem(TTS_PREF_KEY, id); } catch (e) { /* ignore */ } }
@@ -8347,7 +8371,10 @@ async function ttsRun(word, type, auto, key) {
   // 通道优先级：夸克/UC 用「挂载优先」；其余（Chromium 系）用「游离优先」（移动端最稳）。
   const channelOrder = quark ? [true, false] : [false, true];
   const mkItem = (s, att) => ({ src: s, attached: att, bust: att ? bust : '', needPlaying: quark });
+  const localOn = ttsLocalReady();
   const stages = [];
+  // 夸克：跨域远端媒体被内核直接拒绝 → 「同源（SW 代理）」通道排第一（唯一能在夸克出声的网络通道）
+  if (quark && localOn) stages.push([mkItem(TTS_LOCAL_SRC, true)]);
   if (tier1.length) {
     for (const att of channelOrder) stages.push(tier1.map((s) => mkItem(s, att)));
   }
@@ -8356,6 +8383,8 @@ async function ttsRun(word, type, auto, key) {
     for (const att of channelOrder) tier2.forEach((s) => arr.push(mkItem(s, att)));
     stages.push(arr);
   }
+  // 非夸克：同源通道只作最后的网络兜底（应对中间层/CDN 抽风），排在直连之后
+  if (!quark && localOn) stages.push([mkItem(TTS_LOCAL_SRC, true)]);
   const deadlineAt = Date.now() + TTS_RUN_DEADLINE;
   let last = { ok: false, why: 'error', code: 0 };
   for (const items of stages) {
@@ -8417,9 +8446,12 @@ function unlockAudio() {
   // 锁定「系统语音」时不做任何网络预热（用户明确要求只用本机语音）
   if ((APP.settings && APP.settings.ttsSource) === 'system') return;
   try {
-    const el = ttsEl('__warm', isQuarkEngine());
+    const quark = isQuarkEngine();
+    // 预热「实际会用到的第一条通道」：夸克走同源(SW)通道，其余走有道直连
+    const warmSrc = (quark && ttsLocalReady()) ? TTS_LOCAL_SRC : TTS_SOURCES[0];
+    const el = ttsEl('__warm', quark);
     if (el && typeof el.play === 'function') {
-      const url = TTS_SOURCES[0].mk('hello', '2');
+      const url = warmSrc.mk('hello', '2');
       el.muted = true;
       try { el.src = url; if (typeof el.load === 'function') el.load(); } catch (e) { /* ignore */ }
       const reset = () => { try { if (el.muted && el.src === url) { ttsPause(el); el.muted = false; } } catch (e) { /* ignore */ } };
@@ -8530,39 +8562,79 @@ function ttsProbe(src, word, type) {
    🔉 解码  → 静音装载能不能跑起来（不依赖用户手势）
    🔊 出声  → 未静音真播一次（需要手势；被拦会明确标注）
    返回结构向后兼容：list / system / voices / saved。 */
+/* 通道诊断：同一个词，用 4 种「URL 形态 × 通道」各试一次，只报 码 / 耗时。
+   手机上截这一行就能定性：
+     直连 ❌码4 + 同源 ✅  → 夸克拒绝「跨域远端媒体」→ 同源通道已生效（正常，无需处理）
+     四项全 ❌             → 内核完全禁媒体 → 需关「省流/无图模式」或换浏览器
+     直连 ✅ / 同源 ❌     → SW 未接管或未部署 → 走直连即可
+   一律带 needPlaying：只有「真的开始出声」才算 ✅，杜绝内核静默假成功。 */
+async function ttsChannelProbe(word) {
+  const w = String(word || 'hello').toLowerCase().trim() || 'hello';
+  const direct = TTS_SOURCES[0].mk(w, '2');
+  const cases = [
+    { key: 'd1', label: '直连·游离', url: direct, att: false },
+    { key: 'd2', label: '直连·挂载', url: direct, att: true },
+    { key: 'd3', label: '同源·SW', url: TTS_LOCAL_SRC.mk(w, '2'), att: true },
+    { key: 'd4', label: '同源·静态', url: TTS_LOCAL_STATIC.mk(w, '2'), att: true },
+  ];
+  const list = [];
+  for (const c of cases) {
+    const src = { id: 'diag-' + c.key, tier: 9, label: c.label, mk: () => c.url };
+    const r = await ttsAttempt({ src: src, attached: c.att, bust: '' }, w, '2', { muted: true, probeOnly: true, needPlaying: true, hardMs: 3000 });
+    if (r.ok) ttsPause(r.el);
+    list.push({ key: c.key, label: c.label, ok: r.ok, ms: r.ms, code: r.code || 0, why: r.ok ? '' : r.why });
+  }
+  return { word: w, list: list, localReady: ttsLocalReady(), verdict: ttsDiagVerdict(list) };
+}
+function ttsDiagVerdict(list) {
+  const ok = (k) => { const x = list.filter((i) => i.key === k)[0]; return !!(x && x.ok); };
+  const remote = ok('d1') || ok('d2');
+  const local = ok('d3') || ok('d4');
+  if (!remote && local) return 'remote-blocked';   // 跨域远端被内核拒绝，同源可用 → 已自动切同源
+  if (remote && !local) return 'local-unavailable'; // 同源不可用（SW 未接管/未部署）
+  if (!remote && !local) return 'no-media';        // 内核完全禁媒体
+  return 'all-ok';
+}
+
 async function ttsSelfTest(word) {
   const w = word || 'hello';
+  const quark = isQuarkEngine();
+  // ① 最先做「真播」（手势还热着、前面没有任何 await）——这是「这台设备此刻到底能不能出声」的唯一真值。
+  const playSrc = (quark && ttsLocalReady()) ? TTS_LOCAL_SRC : TTS_SOURCES[0];
+  let play = null;
+  {
+    const r = await ttsAttempt({ src: playSrc, attached: quark, bust: '' }, w, '2', { hardMs: TTS_TRY_TIMEOUT + 1200, needPlaying: quark });
+    if (r.ok) ttsPause(r.el);
+    play = { id: playSrc.id, label: playSrc.label, ok: r.ok, ms: r.ms, why: r.ok ? '' : r.why, code: r.code || 0 };
+  }
+  // ② 网络层：链路通不通（no-cors 探测，与媒体解码无关）
   const net = [];
   for (const s of TTS_SOURCES) {
     const r = await ttsProbe(s, w, '2');
     net.push({ id: s.id, label: s.label, ok: r.ok, ms: r.ms, why: r.why });
   }
-  const quark = isQuarkEngine();
+  // ③ 解码层：静音装载能不能跑起来（不依赖手势）
   const list = [];
   for (const s of TTS_SOURCES) {
     const r = await ttsAttempt({ src: s, attached: quark, bust: '' }, w, '2', { muted: true, probeOnly: true, hardMs: TTS_TRY_TIMEOUT + 1200, needPlaying: quark });
     if (r.ok) ttsPause(r.el);
     list.push({ id: s.id, label: s.label, ok: r.ok, ms: r.ms, why: r.ok ? '' : r.why, code: r.code || 0 });
   }
-  let play = null;
-  const firstOk = list.filter((x) => x.ok)[0];
-  if (firstOk) {
-    const s = TTS_SOURCES.filter((x) => x.id === firstOk.id)[0];
-    const r = await ttsAttempt({ src: s, attached: quark, bust: '' }, w, '2', { hardMs: TTS_TRY_TIMEOUT + 1200, needPlaying: quark });
-    if (r.ok) ttsPause(r.el);
-    play = { id: s.id, label: s.label, ok: r.ok, ms: r.ms, why: r.ok ? '' : r.why, code: r.code || 0 };
-  }
+  // ④ 通道诊断（直连游离 / 直连挂载 / 同源 SW / 同源静态）
+  let diag = null;
+  try { diag = await ttsChannelProbe(w); } catch (e) { diag = null; }
   let system = false, voices = 0;
   try {
     system = !!(window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined');
     if (system) { ttsLoadVoices(); voices = _ttsVoices.length; }
   } catch (e) { /* ignore */ }
-  return { word: w, net: net, list: list, play: play, system: system, voices: voices, saved: ttsSaved(), unlocked: audioUnlocked, engine: quark ? 'quark/uc' : 'default', channelOrder: quark ? 'mounted-first' : 'detached-first', ua: (typeof navigator !== 'undefined' && navigator.userAgent) || '' };
+  return { word: w, net: net, list: list, play: play, diag: diag, system: system, voices: voices, saved: ttsSaved(), unlocked: audioUnlocked, engine: quark ? 'quark/uc' : 'default', channelOrder: quark ? 'mounted-first' : 'detached-first', sw: ttsLocalReady(), ua: (typeof navigator !== 'undefined' && navigator.userAgent) || '' };
 }
 APP._tts = {
   sources: TTS_SOURCES.map((s) => ({ id: s.id, tier: s.tier, label: s.label })),
   order: () => ttsOrder().map((s) => s.id),
   bad: ttsBad, stat: ttsStat, test: ttsSelfTest, play: playAudio, stop: stopAllAudio,
+  channels: ttsChannelProbe, localReady: ttsLocalReady, local: TTS_LOCAL_SRC.id, localStatic: TTS_LOCAL_STATIC.id,
   last: () => APP._ttsLast || null,
   log: () => (APP._ttsLog || []).slice(-20),
 };
