@@ -7795,6 +7795,7 @@ async function openSettings(onClose) {
         '<b>🌐 网络</b>　' + r.net.map((x) => (x.ok ? '✅ ' : '❌ ') + x.label).join('　') + '<br>' +
         '<b>🔉 解码</b>　' + r.list.map(cell).join('　') + '<br>' +
         '<b>🔊 出声</b>　' + playTxt + '<br>' +
+        '<b>🧭 引擎通道</b>　' + (r.engine === 'quark/uc' ? '夸克/UC（已启用「挂载优先」通道修复无发音）' : '标准（游离优先通道）') + '<br>' +
         '<b>🗣 系统语音</b>　' + sysTxt + '<br>' +
         '<span style="opacity:.72">理想结果：网络 ✅ → 解码 ✅ → 出声 ✅（有声就结束，系统语音只在网络音源全挂时才用）。若「网络」就 ❌，说明这台设备连不上该域名，需换网络或锁「系统语音」。</span>';
     } catch (e) { ttsOut.textContent = '自检失败：' + (e && e.message); }
@@ -8113,6 +8114,16 @@ const TTS_RUN_DEADLINE = 12000;     // 一个词跨全部音源档位的整体�
 const TTS_CACHE_MAX = 8;            // 保留最近若干条「已成功」的元素，重播瞬时
 const TTS_PROBE_TIMEOUT = 4000;     // 自检里的网络层探测超时
 
+// 浏览器引擎探测：夸克(Quark)/UC 系内核已知不会播放「游离（不进文档树）的 <audio>」元素，
+// play() 可能静默 resolve（假成功、无声音）或 reject NotAllowedError；必须改用「已挂载（in-DOM）」通道。
+// 这跟 Chromium 系（QQ 浏览器、微信 WebView）相反——后者游离通道最稳。故按引擎翻转通道优先级。
+function isQuarkEngine() {
+  try {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    return /Quark\/|UCBrowser|UCWEB/i.test(ua);
+  } catch (e) { return false; }
+}
+
 // 音源表。tier=1 首选（网易有道，全部端点都在 dict.youdao.com）；tier=2 兜底网络源。
 // ⚠️ 只列「浏览器里真的能播」的端点。实测：dictvoice / speech → 200 audio/mpeg 可播 ✅；
 //    tts.youdao.com/fanyivoice → 688 已下线 ❌；bing 词典音频 → 被防盗链挡 ❌；
@@ -8228,6 +8239,7 @@ function ttsLog(entry) {
    注意：元素一律复用（不复用「坏元素」的判据是 src 必重设并 load，不是元素本身）。 */
 function ttsAttempt(item, word, type, opts) {
   opts = opts || {};
+  const needPlaying = !!opts.needPlaying;   // 夸克：play() 会静默 resolve（假成功），只认 onplaying 实播
   return new Promise((resolve) => {
     const t0 = Date.now();
     const stat = ttsStat[item.src.id] = ttsStat[item.src.id] || { ok: 0, fail: 0, ms: 0 };
@@ -8273,7 +8285,7 @@ function ttsAttempt(item, word, type, opts) {
     let p = null;
     try { p = el.play(); } catch (e) { settle(false, (e && e.name === 'NotAllowedError') ? 'blocked' : 'error', 0); return; }
     if (p && typeof p.then === 'function') {
-      p.then(() => settle(true)).catch((err) => {
+      p.then(() => { if (!needPlaying) settle(true); /* needPlaying：等 onplaying 实播，不在此宣判成功 */ }).catch((err) => {
         const nm = (err && err.name) || '';
         if (nm === 'NotAllowedError') settle(false, 'blocked', 0);
         else if (nm === 'AbortError') settle(false, 'timeout', 0);       // 被 pause / 换源打断
@@ -8301,7 +8313,7 @@ function ttsStageRun(items, word, type, seq, deadlineAt) {
       const item = items[idx++];
       pending++;
       const hardMs = Math.max(1200, Math.min(TTS_TRY_TIMEOUT + 2500, deadlineAt - Date.now()));
-      ttsAttempt(item, word, type, { hardMs: hardMs, onSlow: startNext }).then((r) => {
+      ttsAttempt(item, word, type, { hardMs: hardMs, onSlow: startNext, needPlaying: !!item.needPlaying }).then((r) => {
         pending--;
         if (seq !== _audioSeq) { if (r.ok && r.el) ttsAbort(r.el); finish({ ok: false, why: 'stale', code: 0 }); return; }
         if (settled) { if (r.ok && r.el) ttsAbort(r.el); return; }
@@ -8331,14 +8343,18 @@ async function ttsRun(word, type, auto, key) {
   const tier1 = srcs.filter((s) => s.tier === 1);
   const tier2 = srcs.filter((s) => s.tier !== 1);
   const bust = String(Date.now());
+  const quark = isQuarkEngine();
+  // 通道优先级：夸克/UC 用「挂载优先」；其余（Chromium 系）用「游离优先」（移动端最稳）。
+  const channelOrder = quark ? [true, false] : [false, true];
+  const mkItem = (s, att) => ({ src: s, attached: att, bust: att ? bust : '', needPlaying: quark });
   const stages = [];
   if (tier1.length) {
-    stages.push(tier1.map((s) => ({ src: s, attached: false, bust: '' })));
-    stages.push(tier1.map((s) => ({ src: s, attached: true, bust: bust })));
+    for (const att of channelOrder) stages.push(tier1.map((s) => mkItem(s, att)));
   }
   if (tier2.length) {
-    stages.push(tier2.map((s) => ({ src: s, attached: false, bust: '' }))
-      .concat(tier2.map((s) => ({ src: s, attached: true, bust: bust }))));
+    const arr = [];
+    for (const att of channelOrder) tier2.forEach((s) => arr.push(mkItem(s, att)));
+    stages.push(arr);
   }
   const deadlineAt = Date.now() + TTS_RUN_DEADLINE;
   let last = { ok: false, why: 'error', code: 0 };
@@ -8358,7 +8374,10 @@ async function ttsRun(word, type, auto, key) {
       return { ok: true, src: r.srcId, channel: r.channel };
     }
     last = r;
-    if (r.why === 'blocked') { if (auto) audioAutoBlocked = true; break; }
+    // 不再对 blocked 硬中断：夸克对「游离元素」会误报 blocked（用户其实已点按），
+    // 必须给「挂载通道 / tier2 / 系统语音兜底」都留机会；真正无手势时各档都会 blocked，
+    // 最终由 ttsSettle 走系统语音 + 提示，只是多等一个超时上限（受 TTS_RUN_DEADLINE 约束）。
+    if (r.why === 'blocked') { if (auto) audioAutoBlocked = true; }
     if (r.why === 'stale') return last;
   }
   ttsHaltAll(null);   // 收尾（接下来可能转系统语音）：网络侧全部静音，绝不与系统语音叠着响
@@ -8398,7 +8417,7 @@ function unlockAudio() {
   // 锁定「系统语音」时不做任何网络预热（用户明确要求只用本机语音）
   if ((APP.settings && APP.settings.ttsSource) === 'system') return;
   try {
-    const el = ttsEl('__warm', false);
+    const el = ttsEl('__warm', isQuarkEngine());
     if (el && typeof el.play === 'function') {
       const url = TTS_SOURCES[0].mk('hello', '2');
       el.muted = true;
@@ -8518,9 +8537,10 @@ async function ttsSelfTest(word) {
     const r = await ttsProbe(s, w, '2');
     net.push({ id: s.id, label: s.label, ok: r.ok, ms: r.ms, why: r.why });
   }
+  const quark = isQuarkEngine();
   const list = [];
   for (const s of TTS_SOURCES) {
-    const r = await ttsAttempt({ src: s, attached: false, bust: '' }, w, '2', { muted: true, probeOnly: true, hardMs: TTS_TRY_TIMEOUT + 1200 });
+    const r = await ttsAttempt({ src: s, attached: quark, bust: '' }, w, '2', { muted: true, probeOnly: true, hardMs: TTS_TRY_TIMEOUT + 1200, needPlaying: quark });
     if (r.ok) ttsPause(r.el);
     list.push({ id: s.id, label: s.label, ok: r.ok, ms: r.ms, why: r.ok ? '' : r.why, code: r.code || 0 });
   }
@@ -8528,7 +8548,7 @@ async function ttsSelfTest(word) {
   const firstOk = list.filter((x) => x.ok)[0];
   if (firstOk) {
     const s = TTS_SOURCES.filter((x) => x.id === firstOk.id)[0];
-    const r = await ttsAttempt({ src: s, attached: false, bust: '' }, w, '2', { hardMs: TTS_TRY_TIMEOUT + 1200 });
+    const r = await ttsAttempt({ src: s, attached: quark, bust: '' }, w, '2', { hardMs: TTS_TRY_TIMEOUT + 1200, needPlaying: quark });
     if (r.ok) ttsPause(r.el);
     play = { id: s.id, label: s.label, ok: r.ok, ms: r.ms, why: r.ok ? '' : r.why, code: r.code || 0 };
   }
@@ -8537,7 +8557,7 @@ async function ttsSelfTest(word) {
     system = !!(window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined');
     if (system) { ttsLoadVoices(); voices = _ttsVoices.length; }
   } catch (e) { /* ignore */ }
-  return { word: w, net: net, list: list, play: play, system: system, voices: voices, saved: ttsSaved(), unlocked: audioUnlocked, ua: (typeof navigator !== 'undefined' && navigator.userAgent) || '' };
+  return { word: w, net: net, list: list, play: play, system: system, voices: voices, saved: ttsSaved(), unlocked: audioUnlocked, engine: quark ? 'quark/uc' : 'default', channelOrder: quark ? 'mounted-first' : 'detached-first', ua: (typeof navigator !== 'undefined' && navigator.userAgent) || '' };
 }
 APP._tts = {
   sources: TTS_SOURCES.map((s) => ({ id: s.id, tier: s.tier, label: s.label })),
