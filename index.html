@@ -7,15 +7,15 @@
        会被防盗链换成空 HTML（浏览器里必然 mediaErr4），声明 no-referrer 后才是真音频。 -->
   <meta name="referrer" content="no-referrer" />
   <title>搞定英语 · 高考词汇轻松背</title>
-  <script>window.__HV_VER = '20260918c';window.__HV_SW = '20260918b';</script>
-  <link rel="icon" type="image/png" href="/img/favicon.png?v=20260918c" data-page-node-id="ZI7cMj5JQBTGLOYqFQMj2G" />
-  <link rel="stylesheet" href="/css/style.css?v=20260918j" data-page-node-id="EnH36yhjP9QGUBELqmxA8N" />
+  <script>window.__HV_VER = '20260918d';window.__HV_SW = '20260918b';</script>
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=20260918d" data-page-node-id="ZI7cMj5JQBTGLOYqFQMj2G" />
+  <link rel="stylesheet" href="/css/style.css?v=20260918k" data-page-node-id="EnH36yhjP9QGUBELqmxA8N" />
   <!-- 首屏 bundle 只含「代码 + 紧凑索引」（约 0.67MB gzip），提前发起请求 -->
-  <link rel="preload" as="script" href="/js/app.bundle.js?v=20260918j" fetchpriority="high" data-page-node-id="ZrQ7lPmBnKx2WdEuYsT4vH" />
+  <link rel="preload" as="script" href="/js/app.bundle.js?v=20260918k" fetchpriority="high" data-page-node-id="ZrQ7lPmBnKx2WdEuYsT4vH" />
   <!-- 词库「核心重字段」（释义/音标/分类/PEP，约 2MB gzip）：非概览模块渲染就要用。
        低优先级预取 —— 不与首屏 bundle 抢带宽，但不必等首屏渲染完才开始下，
        等用户切到听写记/分类记时通常已就绪。低带宽（省流量/2G）下由运行时按需加载。 -->
-  <link rel="preload" as="script" href="/js/lib-core.js?v=20260918c" fetchpriority="low" />
+  <link rel="preload" as="script" href="/js/lib-core.js?v=20260918d" fetchpriority="low" />
   <style>
     /* 播放器兜底样式（内联，防 CSS 缓存导致布局失效）：按钮与倍速同行，进度条独立一行并可拖动 */
     .lst-player { gap: 8px; flex-wrap: wrap; row-gap: 10px; padding: 12px 14px; }
@@ -51,6 +51,8 @@
       <div class="header-menu" id="headerMenu" hidden data-page-node-id="0k3jAsxD1t9VUphvj4ZDjL">
         <button data-page="stats" data-page-node-id="q9K3KNoFv7RhK8KIHY6XFR"><svg class="vico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="tB8mqJdYa7jwZDKnXdCgeP"><path d="M3 3v18h18" data-page-node-id="PWuPYIXhhptjyk1pP1FE0k"/><rect x="7" y="10" width="4" height="8" rx="1" data-page-node-id="5l2WeyLRcxXiJhDSCp98qF"/><rect x="15" y="6" width="4" height="12" rx="1" data-page-node-id="pcFmM1k9jwL2nLn2nt3Ex0"/></svg>学习统计</button>
         <button data-page="import" data-page-node-id="yyQIG6O6zaUSgNCXbHi1X6"><svg class="vico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="zUldhkMHgJ2ENxGUr5EwRI"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" data-page-node-id="vfYAHVLZFnNWrSQDtFU8AB"/><path d="M17 8l-5-5-5 5" data-page-node-id="OFeUn9CE8KFQGsGq7808hh"/><path d="M12 3v12" data-page-node-id="qfoO2GbPDuULJlr6IxawFU"/></svg>数据导入</button>
+        <button data-page="parent" id="menuParent" data-page-node-id="mnuParentXxsRu9vKQZ3"><svg class="vico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>家长中心</button>
+        <button data-page="admin" id="menuAdmin" data-page-node-id="mnuAdminXxsRu9vKQZ3"><svg class="vico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>后台管理</button>
       </div>
     </header>
 
@@ -98,7 +100,7 @@
   <!-- 单文件经典脚本：内嵌紧凑索引 + 安全 fetch，file:// 双击打开也能渲染内容。
        词库重字段分两层外置：lib-core.js（功能页必需，HTML 已低优先级 preload）、
        lib-extra.js（词卡专用，打开词卡时才拉），见 app.js loadLibLayer。 -->
-  <script src="/js/app.bundle.js?v=20260918j" defer></script>
+  <script src="/js/app.bundle.js?v=20260918k" defer></script>
   <script>
   /* Service Worker：GitHub Pages 强制 Cache-Control: max-age=600（仅 10 分钟），
      导致每次冷启动都要重新下载 bundle。SW 缓存不受 max-age 约束，
