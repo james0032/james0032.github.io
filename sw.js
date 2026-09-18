@@ -7,6 +7,11 @@
  *   - 导航请求（HTML）：network-first —— 保证发版后立即拿到新版本，离线回退缓存
  *   - 同源静态资源（js/css/img/data）：cache-first —— 这些 URL 都带 ?v= 版本号，
  *     发版换号即换 URL，天然不会读到旧内容
+ *   - /audio/<word>.mp3：**同源音频代理** —— 内部 no-cors 取有道发音，把跨域音频
+ *     伪装成本站同源资源（媒体元素能播 opaque 响应，Chromium 实测通过）。
+ *     动机：夸克/UC 内核会本机直接拒绝加载「跨域远端媒体」（瞬间 mediaErr4，连请求都不发），
+ *           同源 URL 不在其拦截范围内 → 这是夸克上唯一能出声的网络通道。
+ *     顺带缓存这层 opaque 响应 → 同一个词再播零网络、离线也能重复听。
  *   - 其它（跨域 / 非 GET / /api/*）：直接放行，不干预
  *
  * 版本：注册时以 /sw.js?v=<版本> 传入，版本变化才会触发更新，
@@ -32,7 +37,8 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('hv-') && k !== CACHE).map((k) => caches.delete(k))))
+      // ⚠️ 别把发音缓存 hv-audio 一起清掉（它按词长期复用，与发版无关）
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('hv-') && k !== CACHE && k !== AUDIO_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -62,6 +68,47 @@ async function networkFirst(req) {
   }
 }
 
+/* ---------- 同源音频代理：/audio/<word>.mp3?t=<1|2> → 有道发音 ---------- */
+const AUDIO_CACHE = 'hv-audio';
+const AUDIO_MAX = 600;        // 最多缓存多少个词的发音（每个约 10KB，量级 ~6MB 上限）
+const AUDIO_TIMEOUT = 8000;
+
+async function audioTrim(cache) {
+  try {
+    const keys = await cache.keys();
+    if (keys.length <= AUDIO_MAX) return;
+    for (let i = 0; i <= keys.length - AUDIO_MAX; i++) await cache.delete(keys[i]);
+  } catch (e) { /* ignore */ }
+}
+
+async function audioProxy(req, url) {
+  let cache = null;
+  try { cache = await caches.open(AUDIO_CACHE); } catch (e) { cache = null; }
+  if (cache) {
+    const hit = await cache.match(req, { ignoreVary: true });
+    if (hit) return hit;
+  }
+  // 下划线开头的是仓库里的真实静态文件（如 _probe.mp3 自检对照组），交给静态缓存
+  const m = url.pathname.match(/^\/audio\/(?!_)(.+)\.mp3$/);
+  if (!m) return cacheFirst(req);
+  const word = decodeURIComponent(m[1]);
+  const type = url.searchParams.get('t') === '1' ? '1' : '2';
+  const target = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(word) + '&type=' + type;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => { try { ctrl.abort(); } catch (e) { /* ignore */ } }, AUDIO_TIMEOUT);
+  try {
+    const res = await fetch(target, { mode: 'no-cors', signal: ctrl.signal });
+    clearTimeout(timer);
+    if (cache && res && (res.ok || res.type === 'opaque')) {
+      try { cache.put(req, res.clone()).then(() => audioTrim(cache)).catch(() => {}); } catch (e) { /* ignore */ }
+    }
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    return new Response('audio-proxy-fail', { status: 502, headers: { 'Content-Type': 'text/plain' } });
+  }
+}
+
 async function cacheFirst(req) {
   const cache = await caches.open(CACHE);
   const hit = await cache.match(req);
@@ -77,8 +124,12 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   let url;
   try { url = new URL(req.url); } catch (err) { return; }
-  if (url.origin !== self.location.origin) return;          // 跨域（有道发音 / vxiaozhi 图片）不干预
+  if (url.origin !== self.location.origin) return;          // 跨域（vxiaozhi 图片等）不干预
   if (url.pathname.startsWith('/api/')) return;             // 后端接口不走缓存
+  if (url.pathname.startsWith('/audio/')) {                 // 同源音频代理（夸克跨域媒体被拦的解法）
+    e.respondWith(audioProxy(req, url));
+    return;
+  }
 
   if (req.mode === 'navigate' || /\.html?$/i.test(url.pathname) || url.pathname === '/') {
     e.respondWith(networkFirst(req));
