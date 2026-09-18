@@ -8149,11 +8149,11 @@ const TTS_SOURCES = [
 ];
 /* 「同源音频」通道：把跨域的有道音频伪装成「本站同源资源」——
    sw.js 拦截 /audio/<word>.mp3 并在内部 no-cors 取有道，媒体元素收到 opaque 响应
-   （浏览器实测可正常解码播放）。存在的意义：夸克/UC 内核会**本机直接拒绝**加载
-   「跨域远端媒体」（瞬间 MEDIA_ERR_SRC_NOT_SUPPORTED·码 4，连请求都不发），
-   而同源 URL 不在它的拦截范围内 → 这条路能在夸克上出声，且零仓库体积
-   （不用给一万多个词预存 mp3）。非夸克环境仍走「直连有道」首选（更省一跳）。
-   ⚠️ 需要 SW 已接管页面，否则 /audio/* 会 404（用 ttsLocalReady() 把关）。 */
+   （Chromium 系实测可正常解码播放）。存在的意义：非夸克内核若被中间层/CDN 抽风挡掉
+   直连，可经 SW 同源自代理兜底出声，且零仓库体积（不用给一万多词预存 mp3）。
+   ⚠️ 需要 SW 已接管页面，否则 /audio/* 会 404（用 ttsLocalReady() 把关）。
+   ⚠️ 夸克/UC 不适用：其内核会**本机直接拒绝**跨域远端媒体（码4），且对 SW 回的 opaque
+      同样「资源嗅探」下载、无法解码 —— 故 ttsRun 对夸克直接走系统语音，不进此通道。 */
 const TTS_LOCAL_SRC = { id: 'local', tier: 0, local: true, label: '本地同源(经SW)', mk: (w, t) => '/audio/' + encodeURIComponent(String(w).toLowerCase().trim()) + '.mp3?t=' + t };
 const TTS_LOCAL_STATIC = { id: 'localFile', tier: 0, local: true, label: '同源静态', mk: () => '/audio/probe.mp3' };
 const ttsBad = {};  // 本会话失败次数：>=2 不再优先尝试（避免每个词都白等一轮）
@@ -8360,6 +8360,13 @@ function ttsStageRun(items, word, type, seq, deadlineAt) {
    第三档「非有道兜底网络源」。任何一档出声即收工。 */
 async function ttsRun(word, type, auto, key) {
   const seq = ++_audioSeq;
+  // 夸克/UC 内核（R16 修复）：任何 <audio src=*.mp3> 网络音源都会「自动下载 + 媒体码4」——
+  //   ① 跨域远端媒体被内核本机直接拒绝（连请求都不发）；
+  //   ② SW 同源自代理返回的 opaque 响应在夸克同样被「资源嗅探」下载、无法解码出声
+  //     （真 Chromium 能播 opaque，但夸克会把它当媒体文件落盘到「下载内容」）。
+  // 因此夸克上**没有任何可用的网络音频通道**，唯一能出声的是系统语音（Web Speech API，无 URL 嗅探）。
+  // 直接交 ttsSettle 走系统语音兜底，绝不发起任何网络音频请求，从根上杜绝「自动下载 + 码4 误报」。
+  if (isQuarkEngine()) return { ok: false, why: 'quark-net', code: 0 };
   const all = ttsOrder();
   const fresh = all.filter((s) => (ttsBad[s.id] || 0) < 2);
   const srcs = fresh.length ? fresh : all;
@@ -8426,6 +8433,12 @@ function ttsTip(r) {
   if (why === 'blocked') { toast('发音被浏览器拦截：请先点一下页面任意处，再点喇叭'); return; }
   if (!ttsShouldTip()) return;
   ttsMarkTipped();
+  if (why === 'quark-net') {
+    // 夸克上网络音频一律不可用（会触发自动下载），已改走系统语音；若系统语音也没有声，
+    // 说明该设备缺英文语音包或禁用了语音合成，引导换浏览器/自检，而不是误导成「被拦截」。
+    toast('夸克浏览器不支持网页音频发音（会触发自动下载），已改用系统语音朗读；若仍无声，请改用 Chrome / QQ 浏览器，或在「设置 → ⑧ 发音音源」自检');
+    return;
+  }
   const code = r && r.code ? '（媒体错误码 ' + r.code + '）' : '';
   toast('发音失败' + code + '：网络音源与系统语音均不可用，可在「设置 → ⑧ 发音音源」自检');
 }
@@ -8447,9 +8460,12 @@ function unlockAudio() {
   if ((APP.settings && APP.settings.ttsSource) === 'system') return;
   try {
     const quark = isQuarkEngine();
-    // 预热「实际会用到的第一条通道」：夸克走同源(SW)通道，其余走有道直连
-    const warmSrc = (quark && ttsLocalReady()) ? TTS_LOCAL_SRC : TTS_SOURCES[0];
-    const el = ttsEl('__warm', quark);
+    // 夸克/UC：任何网络音频都会触发「自动下载」，连预热都不要做（否则首次交互就静默下载一个文件）。
+    // 夸克发音只走系统语音兜底，无需预热网络通道。
+    if (quark) return;
+    // 非夸克：预热「实际会用到的第一条通道」——直连有道（非夸克最稳的形态），仅做静音预载、不追求出声
+    const warmSrc = TTS_SOURCES[0];
+    const el = ttsEl('__warm', false);
     if (el && typeof el.play === 'function') {
       const url = warmSrc.mk('hello', '2');
       el.muted = true;
@@ -8569,6 +8585,16 @@ function ttsProbe(src, word, type) {
      直连 ✅ / 同源 ❌     → SW 未接管或未部署 → 走直连即可
    一律带 needPlaying：只有「真的开始出声」才算 ✅，杜绝内核静默假成功。 */
 async function ttsChannelProbe(word) {
+  // 夸克/UC：任何 <audio src=*.mp3> 都会触发「自动下载」，连诊断都不要做网络尝试，直接报告「仅系统语音可用」。
+  if (isQuarkEngine()) {
+    const w = String(word || 'hello').toLowerCase().trim() || 'hello';
+    return { word: w, list: [
+      { key: 'd1', label: '直连·游离', ok: false, ms: 0, code: 0, why: 'quark' },
+      { key: 'd2', label: '直连·挂载', ok: false, ms: 0, code: 0, why: 'quark' },
+      { key: 'd3', label: '同源·SW', ok: false, ms: 0, code: 0, why: 'quark' },
+      { key: 'd4', label: '同源·静态', ok: false, ms: 0, code: 0, why: 'quark' },
+    ], localReady: ttsLocalReady(), verdict: 'quark-only' };
+  }
   const w = String(word || 'hello').toLowerCase().trim() || 'hello';
   const direct = TTS_SOURCES[0].mk(w, '2');
   const cases = [
@@ -8599,6 +8625,31 @@ function ttsDiagVerdict(list) {
 async function ttsSelfTest(word) {
   const w = word || 'hello';
   const quark = isQuarkEngine();
+  if (quark) {
+    // 夸克/UC：网络音频一律不可用（会触发自动下载），自检只报告系统语音能力，
+    // 不做任何网络尝试（否则自检本身就会下载音频文件）。
+    let system = false, voices = 0;
+    try {
+      system = !!(window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined');
+      if (system) { ttsLoadVoices(); voices = _ttsVoices.length; }
+    } catch (e) { /* ignore */ }
+    const na = (s) => ({ id: s.id, label: s.label, ok: false, ms: 0, why: 'quark' });
+    return {
+      word: w,
+      net: TTS_SOURCES.map(na),
+      list: TTS_SOURCES.map(na),
+      play: { id: 'system', label: '系统语音（夸克仅可用此）', ok: system, ms: 0, why: system ? '' : 'no-system', code: 0 },
+      diag: { word: w, list: [
+        { key: 'd1', label: '直连·游离', ok: false, ms: 0, code: 0, why: 'quark' },
+        { key: 'd2', label: '直连·挂载', ok: false, ms: 0, code: 0, why: 'quark' },
+        { key: 'd3', label: '同源·SW', ok: false, ms: 0, code: 0, why: 'quark' },
+        { key: 'd4', label: '同源·静态', ok: false, ms: 0, code: 0, why: 'quark' },
+      ], localReady: ttsLocalReady(), verdict: 'quark-only' },
+      system: system, voices: voices, saved: ttsSaved(), unlocked: audioUnlocked,
+      engine: 'quark/uc', channelOrder: 'system-only', sw: ttsLocalReady(),
+      ua: (typeof navigator !== 'undefined' && navigator.userAgent) || ''
+    };
+  }
   // ① 最先做「真播」（手势还热着、前面没有任何 await）——这是「这台设备此刻到底能不能出声」的唯一真值。
   const playSrc = (quark && ttsLocalReady()) ? TTS_LOCAL_SRC : TTS_SOURCES[0];
   let play = null;
