@@ -5123,6 +5123,11 @@ function renderGrammarDetail(view, APP, ctx) {
 
 
 
+// 阅读列表的「级别选择」状态（小学 / 初中 / 高中 / 英语故事）：模块级变量 + localStorage，
+// 这样从文章「返回」列表、或下次再进阅读记，都停在上次选的级别上。
+const LV_KEY = 'hv_reading_level';
+let _lvSel = (() => { try { return localStorage.getItem(LV_KEY) || null; } catch (e) { return null; } })();
+
 // 阅读文章数据（约 3.4MB raw / 1MB gzip）已从首屏 bundle 拆出，改为按需加载，
 // 所以 render 首次进入时可能是「还没加载」的状态，需要先取数据再渲染。
 const readingMod = {
@@ -5148,27 +5153,53 @@ const readingMod = {
       return;
     }
     // 按 group 分组（小学 / 初中 / 高中 / 其他），组内保持原顺序；data-idx 为全局索引，供点击打开
-    const GROUP_ORDER = ['小学', '初中', '高中', '其他'];
-    const byGroup = {};
+    // 级别分桶（group + level）：小学·入门 / 初中·进阶 / 高中·挑战 / 英语故事·未分级。
+    // 190 篇一次性平铺太长 → 顶部先给「级别选择按钮」，点选后才列出该级别的文章题目。
+    const LV_ORDER = ['小学', '初中', '高中', '其他'];
+    const lvOrd = (g) => { const i = LV_ORDER.indexOf(g); return i < 0 ? LV_ORDER.length : i; };
+    const lvMap = new Map();
     readings.forEach((r, i) => {
-      const grp = r.group || '其他';
-      if (!byGroup[grp]) byGroup[grp] = [];
-      byGroup[grp].push(i);
+      const g = r.group || '其他';
+      if (!lvMap.has(g)) lvMap.set(g, { key: g, group: g, level: '', idxs: [] });
+      const b = lvMap.get(g);
+      if (!b.level && r.level) b.level = r.level;
+      b.idxs.push(i);
     });
-    const groups = GROUP_ORDER.filter((g) => byGroup[g] && byGroup[g].length);
-    Object.keys(byGroup).forEach((g) => { if (!groups.includes(g)) groups.push(g); }); // 兜底未知分组
-    const groupTitle = (g) => g === '其他'
-      ? '英语故事（未分级 · ' + byGroup[g].length + '）'
-      : (g + ' · 分级阅读（' + byGroup[g].length + '）');
+    const levels = [...lvMap.values()].sort((a, b) => lvOrd(a.group) - lvOrd(b.group));
+    const lvName = (lv) => (lv.group === '其他' ? '英语故事' : lv.group);
+    const lvSub = (lv) => lv.level || (lv.group === '其他' ? '未分级' : '分级阅读');
+    const lvIcon = (lv) => (lv.group === '小学' ? '🌱' : lv.group === '初中' ? '🌿' : lv.group === '高中' ? '🌳' : '📖');
+    const lvTitle = (lv) => lvName(lv) + ' · ' + lvSub(lv) + '（' + lv.idxs.length + ' 篇）';
+    const sel = levels.find((l) => l.key === _lvSel) || null;   // 未选级别 → 只显示按钮与引导
 
     view.innerHTML = `
       <div class="section-title"><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>阅读记 · 英语故事</div>
-      ${groups.map((g) => `
-        <div class="section-title sub">${escapeHtml(groupTitle(g))}</div>
-        <div class="reading-list" data-group="${escapeHtml(g)}">
-          ${byGroup[g].map((i) => readingCard(readings[i], i, ctx)).join('')}
-        </div>`).join('')}
+      <div class="lv-bar">
+        ${levels.map((lv) => `
+          <button class="lv-btn ${sel && sel.key === lv.key ? 'on' : ''}" data-lv="${escapeHtml(lv.key)}" type="button">
+            <span class="lv-top"><span class="lv-ic">${lvIcon(lv)}</span><span class="lv-name">${escapeHtml(lvName(lv))}</span></span>
+            <span class="lv-sub">${escapeHtml(lvSub(lv))} · ${lv.idxs.length} 篇</span>
+          </button>`).join('')}
+      </div>
+      ${sel ? `
+        <div class="section-title sub">${escapeHtml(lvTitle(sel))}</div>
+        <div class="reading-list" data-group="${escapeHtml(sel.key)}">
+          ${sel.idxs.map((i) => readingCard(readings[i], i, ctx)).join('')}
+        </div>` : `
+        <div class="card lv-empty">
+          <div class="lv-empty-ic">👆</div>
+          <div class="lv-empty-t">请选择上方级别</div>
+          <div class="lv-empty-s">共 ${readings.length} 篇 · 入门 → 进阶 → 挑战，由易到难</div>
+        </div>`}
     `;
+    // 级别按钮：点击切换级别 → 重渲染（状态存模块级变量 + localStorage，返回列表时保持）
+    view.querySelectorAll('.lv-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        _lvSel = btn.dataset.lv;
+        try { localStorage.setItem(LV_KEY, _lvSel); } catch (e) { /* 隐私模式忽略 */ }
+        readingMod.render({ view, APP, ctx });
+      });
+    });
     // 事件委托：每个阅读列表单独绑定（节点随 innerHTML 重建，不会重复叠加）
     view.querySelectorAll('.reading-list').forEach((list) => {
       list.addEventListener('click', (e) => {
