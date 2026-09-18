@@ -3,12 +3,15 @@
 <head data-page-node-id="rPTqOEs1CN34cJY6SFPb43">
   <meta charset="UTF-8" data-page-node-id="VDkJowS8NQEfnfxDOKb6LG" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" data-page-node-id="jvWs6bSh6julsaxIqtqw8X" />
+  <!-- 不发 Referer：有道发音不需要它；而兜底网络音源（fanyi.baidu.com/gettts）带第三方 Referer
+       会被防盗链换成空 HTML（浏览器里必然 mediaErr4），声明 no-referrer 后才是真音频。 -->
+  <meta name="referrer" content="no-referrer" />
   <title>搞定英语 · 高考词汇轻松背</title>
   <script>window.__HV_VER = '20260918c';</script>
   <link rel="icon" type="image/png" href="/img/favicon.png?v=20260918c" data-page-node-id="ZI7cMj5JQBTGLOYqFQMj2G" />
-  <link rel="stylesheet" href="/css/style.css?v=20260918e" data-page-node-id="EnH36yhjP9QGUBELqmxA8N" />
+  <link rel="stylesheet" href="/css/style.css?v=20260918f" data-page-node-id="EnH36yhjP9QGUBELqmxA8N" />
   <!-- 首屏 bundle 只含「代码 + 紧凑索引」（约 0.67MB gzip），提前发起请求 -->
-  <link rel="preload" as="script" href="/js/app.bundle.js?v=20260918e" fetchpriority="high" data-page-node-id="ZrQ7lPmBnKx2WdEuYsT4vH" />
+  <link rel="preload" as="script" href="/js/app.bundle.js?v=20260918f" fetchpriority="high" data-page-node-id="ZrQ7lPmBnKx2WdEuYsT4vH" />
   <!-- 词库「核心重字段」（释义/音标/分类/PEP，约 2MB gzip）：非概览模块渲染就要用。
        低优先级预取 —— 不与首屏 bundle 抢带宽，但不必等首屏渲染完才开始下，
        等用户切到听写记/分类记时通常已就绪。低带宽（省流量/2G）下由运行时按需加载。 -->
@@ -95,7 +98,7 @@
   <!-- 单文件经典脚本：内嵌紧凑索引 + 安全 fetch，file:// 双击打开也能渲染内容。
        词库重字段分两层外置：lib-core.js（功能页必需，HTML 已低优先级 preload）、
        lib-extra.js（词卡专用，打开词卡时才拉），见 app.js loadLibLayer。 -->
-  <script src="/js/app.bundle.js?v=20260918e" defer></script>
+  <script src="/js/app.bundle.js?v=20260918f" defer></script>
   <script>
   /* Service Worker：GitHub Pages 强制 Cache-Control: max-age=600（仅 10 分钟），
      导致每次冷启动都要重新下载 bundle。SW 缓存不受 max-age 约束，
