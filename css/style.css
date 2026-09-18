@@ -443,6 +443,22 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 .reading-card .rc-title { font-size: 17px; font-weight: 700; color: var(--text); }
 .reading-card .rc-sub { font-size: 14px; color: var(--muted); margin-top: 3px; }
 .reading-card .rc-meta { font-size: 12px; color: var(--muted); margin-top: 8px; }
+/* 阅读记 · 级别选择按钮（点选后才列该级别文章） */
+.lv-bar { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 4px 0 6px; }
+.lv-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; background: var(--card); border: 2px solid transparent; border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 13px; cursor: pointer; text-align: left; font-family: inherit; transition: transform .1s, border-color .15s; }
+.lv-btn:active { transform: scale(.97); }
+.lv-btn:hover { border-color: #c5d2f0; }
+.lv-btn.on { border-color: var(--primary); background: linear-gradient(180deg, #eef3ff, #ffffff); }
+.lv-btn .lv-top { display: flex; align-items: center; gap: 6px; }
+.lv-btn .lv-ic { font-size: 17px; line-height: 1; }
+.lv-btn .lv-name { font-size: 16px; font-weight: 700; color: var(--text); }
+.lv-btn.on .lv-name { color: var(--primary-d); }
+.lv-btn .lv-sub { font-size: 12px; color: var(--muted); }
+.lv-btn.on .lv-sub { color: var(--primary); }
+.lv-empty { text-align: center; padding: 30px 16px; }
+.lv-empty .lv-empty-ic { font-size: 26px; }
+.lv-empty .lv-empty-t { font-size: 15px; font-weight: 700; color: var(--text); margin-top: 8px; }
+.lv-empty .lv-empty-s { font-size: 13px; color: var(--muted); margin-top: 5px; }
 
 /* 阅读记 - 模式切换条 */
 .reading-mode-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
@@ -492,6 +508,7 @@ textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padd
 /* PC 适配 */
 @media (min-width: 720px) {
   .reading-list { grid-template-columns: repeat(2, 1fr); }
+  .lv-bar { grid-template-columns: repeat(4, 1fr); }
 }
 
 /* 标题栏「更多」菜单（统计 / 导入） */
