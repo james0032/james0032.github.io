@@ -8155,7 +8155,7 @@ const TTS_SOURCES = [
    （不用给一万多个词预存 mp3）。非夸克环境仍走「直连有道」首选（更省一跳）。
    ⚠️ 需要 SW 已接管页面，否则 /audio/* 会 404（用 ttsLocalReady() 把关）。 */
 const TTS_LOCAL_SRC = { id: 'local', tier: 0, local: true, label: '本地同源(经SW)', mk: (w, t) => '/audio/' + encodeURIComponent(String(w).toLowerCase().trim()) + '.mp3?t=' + t };
-const TTS_LOCAL_STATIC = { id: 'localFile', tier: 0, local: true, label: '同源静态', mk: () => '/audio/_probe.mp3' };
+const TTS_LOCAL_STATIC = { id: 'localFile', tier: 0, local: true, label: '同源静态', mk: () => '/audio/probe.mp3' };
 const ttsBad = {};  // 本会话失败次数：>=2 不再优先尝试（避免每个词都白等一轮）
 const ttsStat = {}; // 每个音源的 ok/fail/ms 统计（设置页自检与自动化测试都读它）
 
