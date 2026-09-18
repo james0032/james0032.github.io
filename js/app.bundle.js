@@ -7077,7 +7077,7 @@ async function saveProgress() {
 // 难度等级：1=小学 2=初中 3=高中 4=四级 5=六级 6=考研 7=GRE
 const DIFF_LABELS = { 1: '小学', 2: '初中', 3: '高中', 4: '四级', 5: '六级', 6: '考研', 7: 'GRE' };
 const SETTINGS_KEY = 'happy-vocab-settings-v1';
-function defaultSettings() { return { difficulty: 'all', diffMode: 'le', dailyNew: 500, dailyTotal: 500, reviewAlgo: 'fsrs', selectedBooks: [], learnMode: 'difficulty', initialized: false, examDate: '', fsrsPreset: 'balanced', fsrs: { maxIntervalDays: 365 } }; }
+function defaultSettings() { return { difficulty: 'all', diffMode: 'le', dailyNew: 500, dailyTotal: 500, reviewAlgo: 'fsrs', selectedBooks: [], learnMode: 'difficulty', initialized: false, examDate: '', fsrsPreset: 'balanced', fsrs: { maxIntervalDays: 365 }, ttsSource: 'auto' }; }
 function loadSettings() {
   try { return Object.assign(defaultSettings(), JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch (e) { return defaultSettings(); }
@@ -7569,6 +7569,19 @@ async function openSettings(onClose) {
       </button>
     </div>
 
+    <div class="set-group">
+      <div class="set-title">⑧ 发音音源</div>
+      <p class="hint">单词发音默认按 <b>有道英/美音 → 有道备线 → 系统语音</b> 依次降级，任一可用即可出声，并自动记住本次成功的音源。若某台设备上发音失败，可在此锁定音源，或先点下方自检（会逐个音源真播一次并报告结果）。</p>
+      <div class="seg">
+        ${[['auto', '自动'], ['youdao', '有道'], ['system', '系统语音']].map(([k, l]) => `<button class="seg-btn ${((s.ttsSource || 'auto') === k) ? 'on' : ''}" data-tts="${k}" type="button">${l}</button>`).join('')}
+      </div>
+      <div class="row mt">
+        <button class="btn ghost block" id="ttsTest" type="button">🔊 测试发音</button>
+        <button class="btn gray block" id="ttsReset" type="button">重置音源记忆</button>
+      </div>
+      <p class="hint" id="ttsTestOut">点「测试发音」会依次实测各音源并报告结果。</p>
+    </div>
+
     <div class="row mt">
       <button class="btn block" id="saveSettings" type="button">保存</button>
       <button class="btn gray block" id="closeSettings" type="button">取消</button>
@@ -7729,6 +7742,32 @@ async function openSettings(onClose) {
       });
     };
   }
+  // ---- ⑧ 发音音源：锁定音源 / 逐个自检 / 清掉「上次成功音源」记忆 ----
+  let selTts = s.ttsSource || 'auto';
+  const ttsSegs = m.querySelectorAll('.seg-btn[data-tts]');
+  ttsSegs.forEach((b) => b.addEventListener('click', () => {
+    selTts = b.dataset.tts;
+    ttsSegs.forEach((x) => x.classList.toggle('on', x.dataset.tts === selTts));
+  }));
+  const ttsOut = m.querySelector('#ttsTestOut');
+  const ttsTestBtn = m.querySelector('#ttsTest');
+  if (ttsTestBtn) ttsTestBtn.onclick = async () => {
+    ttsOut.textContent = '正在依次实测各音源…';
+    ttsTestBtn.disabled = true;
+    try {
+      const r = await APP._tts.test('hello');
+      const whyTxt = { timeout: '超时', blocked: '被浏览器拦截', error: '加载失败' };
+      ttsOut.innerHTML = r.list.map((x) => (x.ok ? '✅ ' : '❌ ') + x.label + (x.ok ? '（' + x.ms + 'ms）' : '（' + (whyTxt[x.why] || x.why) + '）')).join('　')
+        + '<br>' + (r.system ? ('✅ 系统语音可用' + (r.voices ? '（' + r.voices + ' 个语音包）' : '（语音包尚未就绪）')) : '❌ 系统语音不可用（该浏览器内核无 Web Speech）');
+    } catch (e) { ttsOut.textContent = '自检失败：' + (e && e.message); }
+    ttsTestBtn.disabled = false;
+  };
+  const ttsResetBtn = m.querySelector('#ttsReset');
+  if (ttsResetBtn) ttsResetBtn.onclick = () => {
+    try { localStorage.removeItem(TTS_PREF_KEY); } catch (e) { /* ignore */ }
+    toast('已重置音源记忆，下次发音将从头依次尝试');
+  };
+
   m.querySelector('#saveSettings').onclick = () => {
     const sel = m.querySelector('input[name="diff"]:checked');
     const rsel = m.querySelector('input[name="ralgo"]:checked');
@@ -7747,6 +7786,10 @@ async function openSettings(onClose) {
     APP.settings.fsrs = f;
     APP.settings.fsrsPreset = (selPreset === 'custom' || FSRS_PRESETS[selPreset]) ? selPreset : 'balanced';
     APP.settings.examDate = (m.querySelector('#setExamDate').value || '').trim();
+    if (selTts !== ((APP.settings.ttsSource) || 'auto')) {
+      APP.settings.ttsSource = selTts;
+      try { localStorage.removeItem(TTS_PREF_KEY); } catch (e) { /* 换音源后清掉旧记忆，按新设置重新选路 */ }
+    }
     saveSettings();
     closeModal();
     if (typeof onClose === 'function') onClose();
@@ -8000,43 +8043,251 @@ function toggleNotebook(word) {
   saveProgress();
 }
 
-/* ---------- 发音（直连有道，Audio 缓存，避免代理 404 往返） ---------- */
+/* ---------- 发音：多音源容错引擎（有道 → 有道备线 → 有道 le 备线 → 系统语音） ----------
+   移动端的失败面远宽于桌面，且各不相同：
+     · 有的 WebView 没有 speechSynthesis（旧代码据此弹「请检查网络」）；
+     · 有的内核不播放「未挂到文档树」的 <audio> 元素；
+     · 有的网络只有某个端点可达、或某个音源被限速/拦截；
+     · 复用「上一次加载失败的缓存元素」会让 play() 直接 reject。
+   因此这里不再「单一音源 + 一次 play()」，而是：并发兜底接力 + 记住可用音源
+   + 失败元素绝不复用 + 系统语音兜底，全部失败才提示（同一会话只提示一次）。 */
 let playingWord = null;
 let audioUnlocked = false; // 移动端自动播放策略：需在「一次用户手势内」播过一次才允许后续自动播放
-const audioCache = new Map(); // key: word|type -> Audio（浏览器自动缓存解码后的音频，重复播放瞬时）
+let audioAutoBlocked = false; // 自动播放被内核拦过（缺手势）→ 本会话不再重试，省流量也少一次白等
+let _audioSeq = 0;         // 发音代次：新的发音请求会让旧请求的后续尝试立即失效
+const audioCache = new Map(); // key: word|type -> 已成功播放过的 Audio（重播瞬时，且不再依赖网络）
+const TTS_PREF_KEY = 'hv_tts_src';   // 上次成功的音源（下次优先用它）
+const TTS_TIP_KEY = 'hv_tts_tip';    // 会话级「已提示过失败详情」标记，避免满屏 toast
+const TTS_TRY_TIMEOUT = 2500;        // 单音源软超时（ms）：到点不放弃，改为「并排启动下一个音源」
+const TTS_RUN_DEADLINE = 7000;       // 每个词的整体上限（ms）：到点收尾，避免弱网长时间无反馈
+const TTS_CACHE_MAX = 40;
+
+// 音源表。mk(word, type) → 直链；type='1' 英式 / '2' 美式（备线只有单一音色，忽略 type）
+// ⚠️ 只列「浏览器里真的能播」的音源。实测（Chromium 真机 + curl）：
+//    · 有道 dictvoice / speech → 200 audio/mpeg，可播 ✅
+//    · 百度 fanyi.baidu.com/gettts → 200 但 Content-Type: text/html（浏览器里必然 mediaErr4）❌
+//    · tts.baidu.com / audio.dict.cn / bing 词典音频 → 被 ORB 拦或被防盗链挡 ❌
+//    所以备用音源是「有道的另一个端点」+「系统语音」，而不是塞一堆永远失败的第三方接口
+//    （每塞一个必挂的音源，都会让用户在失败路径上多等一个超时）。
+const TTS_SOURCES = [
+  { id: 'youdao', label: '有道英/美音', mk: (w, t) => 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(w) + '&type=' + t },
+  { id: 'youdao2', label: '有道备线', mk: (w) => 'https://dict.youdao.com/speech?audio=' + encodeURIComponent(w) },
+  { id: 'youdao3', label: '有道 le 备线', mk: (w, t) => 'https://dict.youdao.com/dictvoice?le=en&audio=' + encodeURIComponent(w) + '&type=' + t },
+];
+const ttsBad = {};  // 本会话内失败次数：>=2 就不再优先尝试（避免每个词都白等一轮）
+const ttsStat = {}; // 诊断计数：{ id: { ok, fail, ms } } —— 设置页「测试发音」与自动化测试都读它
+const ttsInFlight = new Set(); // 正在加载/尝试中的媒体元素：换词或切页时统一掐掉，避免叠音/幽灵出声
+
+function ttsSaved() { try { return localStorage.getItem(TTS_PREF_KEY) || ''; } catch (e) { return ''; } }
+function ttsRemember(id) { try { if (id) localStorage.setItem(TTS_PREF_KEY, id); } catch (e) { /* ignore */ } }
+function ttsShouldTip() { try { return sessionStorage.getItem(TTS_TIP_KEY) !== '1'; } catch (e) { return true; } }
+function ttsMarkTipped() { try { sessionStorage.setItem(TTS_TIP_KEY, '1'); } catch (e) { /* ignore */ } }
+
+// 音源顺序：设置里锁定的音源 → 上次成功的音源 → 其余；本会话失败的沉底
+function ttsOrder() {
+  const pref = (APP.settings && APP.settings.ttsSource) || 'auto';
+  if (pref === 'system') return [];
+  let list = TTS_SOURCES.slice();
+  if (pref === 'youdao') { const f = list.filter((s) => s.id.indexOf('youdao') === 0); if (f.length) list = f; }
+  const saved = ttsSaved();
+  list.sort((a, b) => ttsRank(b, saved) - ttsRank(a, saved));
+  return list;
+}
+function ttsRank(s, saved) { let n = 0; if (s.id === saved) n += 10; if (!ttsBad[s.id]) n += 1; return n; }
+
+/* 单音源尝试 → { ok:true, el, ms } | { ok:false, why:'blocked'|'error'|'timeout', ms }
+   onTimeout：软超时（TTS_TRY_TIMEOUT 内没出声、但也没报错）时回调——本音源**不放弃继续等**，
+   只是让调用方并排启动下一个音源（弱网下单一超时很容易误杀一个「慢但能用」的音源）。
+   失败时元素已销毁，调用方不得复用（这正是旧代码「复用坏元素」的坑）。 */
+function ttsTryOne(src, word, type, onTimeout, hardMs) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    let el = null, timer = null, hard = null, settled = false;
+    const stat = ttsStat[src.id] = ttsStat[src.id] || { ok: 0, fail: 0, ms: 0 };
+    const detach = (keep) => {
+      if (!el) return;
+      try { ttsInFlight.delete(el); } catch (e) { /* ignore */ }
+      try { el.onerror = el.onplaying = el.oncanplay = null; } catch (e) { /* ignore */ }
+      if (!keep) {
+        try { el.pause(); } catch (e) { /* ignore */ }
+        try { if (el.parentNode) el.parentNode.removeChild(el); } catch (e) { /* ignore */ }
+      }
+    };
+    const log = (ok, why, ms) => {
+      try {
+        const lg = APP._ttsLog = APP._ttsLog || [];
+        lg.push({ src: src.id, ok: ok, why: why || '', ms: ms, word: String(word).slice(0, 24) });
+        if (lg.length > 60) lg.shift();
+      } catch (e) { /* ignore */ }
+    };
+    const finish = (ok, why, err) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (hard) clearTimeout(hard);
+      stat.ms = Date.now() - t0;
+      log(ok, why, stat.ms);
+      if (ok) { stat.ok++; detach(true); resolve({ ok: true, el: el, ms: stat.ms }); }
+      else { stat.fail++; detach(false); resolve({ ok: false, why: why, ms: stat.ms, err: err || null }); }
+    };
+    try { el = new Audio(); } catch (e) { stat.fail++; resolve({ ok: false, why: 'error', ms: 0 }); return; }
+    try { ttsInFlight.add(el); } catch (e) { /* ignore */ }
+    el.preload = 'auto';
+    try { el.setAttribute('playsinline', ''); } catch (e) { /* 老内核无此 API */ }
+    // 部分 WebView（微信 X5 / 部分国产内核）不播放未挂到文档树的 audio 元素 → 挂一个隐藏壳。
+    // 注意不能用 display:none（个别内核会因此不解码），用移出视口的 1px 元素最稳。
+    try {
+      el.style.position = 'fixed';
+      el.style.left = '-9999px';
+      el.style.top = '0';
+      el.style.width = '1px';
+      el.style.height = '1px';
+      el.style.opacity = '0';
+      el.style.pointerEvents = 'none';
+      const host = document.body || document.documentElement;
+      if (host && host.appendChild) host.appendChild(el);
+    } catch (e) { /* ignore */ }
+    el.onerror = () => finish(false, 'error');
+    el.onplaying = () => finish(true);
+    try { el.src = src.mk(word, type); } catch (e) { finish(false, 'error'); return; }
+    timer = setTimeout(() => { log(false, 'slow', Date.now() - t0); if (onTimeout) onTimeout(); }, TTS_TRY_TIMEOUT);
+    hard = setTimeout(() => finish(false, 'timeout'), hardMs || TTS_RUN_DEADLINE);
+    let p = null;
+    try { p = el.play(); } catch (e) { finish(false, (e && e.name === 'NotAllowedError') ? 'blocked' : 'error', e); return; }
+    if (p && p.then) {
+      p.then(() => finish(true)).catch((err) => {
+        const nm = (err && err.name) || '';
+        finish(false, nm === 'NotAllowedError' ? 'blocked' : (nm === 'AbortError' ? 'timeout' : 'error'), err);
+      });
+    }
+  });
+}
+
+function ttsTrim() {
+  while (audioCache.size > TTS_CACHE_MAX) {
+    const k = audioCache.keys().next().value;
+    const el = audioCache.get(k);
+    audioCache.delete(k);
+    try { el.pause(); if (el.parentNode) el.parentNode.removeChild(el); } catch (e) { /* ignore */ }
+  }
+}
+
+/* 并发兜底（hedged request）：按 TTS_TRY_TIMEOUT 的节奏「接力」启动下一个音源，
+   谁先真的出声算谁赢，其余立即销毁。
+   为什么不用「单一超时就切换」：弱网下第一次点喇叭往往就是慢（首个媒体请求要等音频
+   子系统就绪），一刀切超时会把「慢但能用」的音源误杀，用户反而更久听不到声音。 */
+function ttsRun(word, type, auto, key) {
+  const seq = ++_audioSeq;
+  const all = ttsOrder();
+  const fresh = all.filter((s) => (ttsBad[s.id] || 0) < 2);
+  const list = fresh.length ? fresh : all;
+  return new Promise((resolve) => {
+    if (!list.length) { resolve({ ok: false, why: 'blocked' }); return; }
+    let idx = 0, pending = 0, settled = false, lastWhy = 'error';
+    const kill = (el) => { try { el.pause(); if (el.parentNode) el.parentNode.removeChild(el); } catch (e) { /* ignore */ } };
+    const deadline = setTimeout(() => { if (!settled) { settled = true; resolve({ ok: false, why: lastWhy }); } }, TTS_RUN_DEADLINE);
+    const win = (src, el, ms) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      // 掐掉本轮并发兜底里「还没赢」的其它元素，避免两个音频一起响
+      ttsInFlight.forEach((e) => { if (e !== el) kill(e); });
+      ttsBad[src.id] = 0;
+      ttsRemember(src.id);
+      audioCache.set(key, el);
+      ttsTrim();
+      APP._ttsLast = { src: src.id, ms: ms, at: Date.now(), word: word };
+      resolve({ ok: true, src: src.id });
+    };
+    const done = (why) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve({ ok: false, why: why });
+    };
+    const startNext = () => {
+      if (settled || seq !== _audioSeq || idx >= list.length) return;
+      const src = list[idx++];
+      pending++;
+      ttsTryOne(src, word, type, startNext).then((r) => {
+        pending--;
+        if (seq !== _audioSeq || settled) { if (r.ok && r.el) kill(r.el); return; }
+        if (r.ok) { win(src, r.el, r.ms); return; }
+        lastWhy = r.why;
+        ttsBad[src.id] = (ttsBad[src.id] || 0) + 1;
+        if (r.why === 'blocked') { if (auto) audioAutoBlocked = true; done('blocked'); return; }
+        startNext(); // 硬失败：立刻接上下一个音源（软超时则由 onTimeout 提前接上）
+        if (pending === 0 && idx >= list.length) done(lastWhy);
+      });
+    };
+    startNext(); // 同步启动第一个音源，保住用户手势
+  });
+}
+
+// 收尾：网络音源全挂 → 系统语音；仍无声 → 提示（同一会话只提示一次）
+function ttsSettle(word, type, auto, r) {
+  if (auto) { speakFallback(word, type); return; }
+  const tip = () => ttsTip(r && r.why);
+  if (!speakFallback(word, type, tip)) tip();
+}
+
+function ttsTip(why) {
+  if (why === 'blocked') { toast('请先点击页面任意处，再点喇叭'); return; }
+  if (!ttsShouldTip()) return; // 同一会话里不反复打扰
+  ttsMarkTipped();
+  toast('发音加载失败：网络音源与系统语音均不可用，可在「设置 → ⑧ 发音音源」自检');
+}
 
 /* 首次用户手势时解锁音频（播一段静音）。移动端在未解锁时调用 play() 会抛
-   NotAllowedError，此前被统一当成「网络失败」弹错，其实与网络无关。 */
-function unlockAudio() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  try {
-    const a = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
-    a.volume = 0;
-    const p = a.play();
-    if (p && p.catch) p.catch(() => { /* 静音解锁失败可忽略 */ });
-  } catch (e) { /* ignore */ }
-}
-if (typeof document !== 'undefined' && document.addEventListener) {
+   NotAllowedError，此前被统一当成「网络失败」弹错，其实与网络无关。
+   注意：静音解锁本身也可能失败（个别内核拦 data: URI），失败就下次手势再试，别一次定终身。 */
+function armAudioUnlock() {
+  if (typeof document === 'undefined' || !document.addEventListener) return;
   document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
   document.addEventListener('mousedown', unlockAudio, { once: true });
   document.addEventListener('keydown', unlockAudio, { once: true });
 }
+function unlockAudio() {
+  if (audioUnlocked) return;
+  try {
+    const a = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+    a.volume = 0;
+    const p = a.play();
+    if (p && p.then) {
+      p.then(() => { audioUnlocked = true; audioAutoBlocked = false; })
+        .catch(() => { armAudioUnlock(); }); // 解锁失败 → 下次手势再试
+    } else { audioUnlocked = true; audioAutoBlocked = false; }
+  } catch (e) { armAudioUnlock(); }
+}
+armAudioUnlock();
 
-/* Web Speech API 兜底：有道音频被拦截 / 加载失败时，用系统语音朗读，保证「能出声」 */
-function speakFallback(word, type) {
+/* Web Speech API 兜底：网络音源全挂时用系统语音朗读，保证「能出声」。
+   Google/Android 的 voices 是异步加载的（初次 getVoices() 常返回空），必须监听 voiceschanged；
+   onSilent：speak() 没抛错但 1.3s 内没有 onstart（典型于 WebView 无可用语音包）时回调。 */
+let _ttsVoices = [];
+function ttsLoadVoices() { try { _ttsVoices = window.speechSynthesis.getVoices() || []; } catch (e) { _ttsVoices = []; } }
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  ttsLoadVoices();
+  try { window.speechSynthesis.addEventListener('voiceschanged', ttsLoadVoices); } catch (e) { /* 老内核走 onvoiceschanged */ }
+  try { window.speechSynthesis.onvoiceschanged = ttsLoadVoices; } catch (e) { /* ignore */ }
+}
+function speakFallback(word, type, onSilent) {
   try {
     const S = window.speechSynthesis;
     if (!S || typeof SpeechSynthesisUtterance === 'undefined') return false;
-    S.cancel();
+    if (!_ttsVoices.length) ttsLoadVoices();
     const u = new SpeechSynthesisUtterance(String(word));
     u.lang = type === '2' ? 'en-US' : 'en-GB';
     u.rate = 0.92;
-    const vs = S.getVoices() || [];
     const want = type === '2' ? /en[-_]US/i : /en[-_]GB/i;
-    const pick = vs.filter((v) => want.test(v.lang))[0] || vs.filter((v) => /^en/i.test(v.lang))[0];
-    if (pick) u.voice = pick;
+    const pick = _ttsVoices.filter((v) => want.test(v.lang))[0] || _ttsVoices.filter((v) => /^en/i.test(v.lang))[0];
+    if (pick) { u.voice = pick; u.lang = pick.lang; }
+    let started = false;
+    u.onstart = () => { started = true; };
+    u.onerror = () => { if (!started && onSilent) onSilent(); };
+    try { S.cancel(); } catch (e) { /* ignore */ }
     S.speak(u);
+    if (onSilent) setTimeout(() => { if (!started) onSilent(); }, 1300);
     return true;
   } catch (e) { return false; }
 }
@@ -8047,36 +8298,68 @@ function playAudio(word, type, opts) {
   if (!word) return;
   const t = type === 2 ? '2' : '1';
   const auto = !!(opts && opts.auto);
-  if (auto && !audioUnlocked) return;
+  if (auto && (!audioUnlocked || audioAutoBlocked)) return;
+  APP._ttsCalls = (APP._ttsCalls || 0) + 1; // 诊断：被请求了几次发音（自动化测试/线上排障用）
   const key = word.toLowerCase() + '|' + t;
-  let el = audioCache.get(key);
-  if (!el) {
-    // 静态部署下 /api/audio 代理不可用，直连有道发音最快最稳；本地有 server.js 时直连同样可用
-    const url = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(word) + '&type=' + t;
-    el = new Audio(url);
-    el.preload = 'auto';
-    audioCache.set(key, el);
-  }
   playingWord = word;
-  let settled = false;
-  const fallback = (why) => {
-    if (settled) return;
-    settled = true;
-    if (why !== 'blocked') audioCache.delete(key); // 加载失败的元素不再复用，下次重建
-    if (speakFallback(word, t)) return;            // 系统语音兜底成功则不再报错
-    if (auto) return;                              // 自动播放失败保持静默
-    toast(why === 'blocked' ? '请先点击页面任意处再试发音' : '发音播放失败（请检查网络）');
-  };
-  const p = el.play();
-  if (p && p.catch) p.catch((err) => fallback(err && err.name === 'NotAllowedError' ? 'blocked' : 'net'));
+  // 换词/换音标前先停掉别的正在播的缓存元素，避免「英音+美音」叠着响
+  audioCache.forEach((e, k) => {
+    if (k !== key && e && !e.paused) { try { e.pause(); e.currentTime = 0; } catch (err) { /* ignore */ } }
+  });
+  // ① 命中「已成功播放过」的元素 → 直接重播（最快，且完全不走网络）
+  const hit = audioCache.get(key);
+  if (hit) {
+    const retry = () => {
+      audioCache.delete(key);                       // 坏元素绝不复用
+      ttsRun(word, t, auto, key).then((r) => ttsSettle(word, t, auto, r));
+    };
+    try {
+      hit.currentTime = 0;
+      const p = hit.play();
+      if (p && p.then) p.then(() => { APP._ttsLast = { src: 'cache', ms: 0, at: Date.now(), word: word }; }).catch(retry);
+      return;
+    } catch (e) { retry(); return; }
+  }
+  // ② 否则按音源顺序尝试（并发兜底），全失败再退到系统语音
+  ttsRun(word, t, auto, key).then((r) => ttsSettle(word, t, auto, r));
 }
 function playUK(word, opts) { playAudio(word, 1, opts); }
 function playUS(word, opts) { playAudio(word, 2, opts); }
 // 暂停全部已缓存音频（页面切换时调用，避免离开听写后音频继续播放）
 function stopAllAudio() {
-  audioCache.forEach((el) => { try { el.pause(); el.currentTime = 0; } catch (e) { /* ignore */ } });
+  _audioSeq++; // 作废进行中的尝试：离开页面后不再后台换音源、不再弹提示
+  ttsInFlight.forEach((el) => { try { el.pause(); el.currentTime = 0; } catch (e) { /* ignore */ } });
+  ttsInFlight.clear();
+  audioCache.forEach((el) => {
+    try { if (!el.paused || el.readyState > 0) { el.pause(); el.currentTime = 0; } } catch (e) { /* ignore */ }
+  });
   playingWord = null;
 }
+
+/* 音源自检：逐个音源真播一次（设置页「测试发音」与自动化测试共用）。
+   自检要的是「能不能用」的明确结论 → 给每个音源一个硬上限（软超时 + 0.8s），不并发。 */
+async function ttsSelfTest(word) {
+  const w = word || 'hello';
+  const list = [];
+  for (const s of TTS_SOURCES) {
+    const r = await ttsTryOne(s, w, '2', null, TTS_TRY_TIMEOUT + 800);
+    if (r.ok) { try { r.el.pause(); } catch (e) { /* ignore */ } }
+    list.push({ id: s.id, label: s.label, ok: r.ok, ms: r.ms, why: r.ok ? '' : r.why });
+  }
+  let system = false, voices = 0;
+  try {
+    system = !!(window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined');
+    if (system) { ttsLoadVoices(); voices = _ttsVoices.length; }
+  } catch (e) { /* ignore */ }
+  return { word: w, list: list, system: system, voices: voices, saved: ttsSaved() };
+}
+APP._tts = {
+  sources: TTS_SOURCES.map((s) => ({ id: s.id, label: s.label })),
+  order: () => ttsOrder().map((s) => s.id),
+  bad: ttsBad, stat: ttsStat, test: ttsSelfTest,
+  last: () => APP._ttsLast || null,
+  log: () => (APP._ttsLog || []).slice(-20),
+};
 
 /* ---------- UI 工具 ---------- */
 function toast(msg) {
