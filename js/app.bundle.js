@@ -512,6 +512,9 @@ const _ICONS = {
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><path d="M12 16v2"/>',
   flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
   moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/>',
 };
 const IC = {};
 // 白色变体：用于深蓝头部/主色按钮等深色底场景
@@ -1845,6 +1848,365 @@ function aiBumpToday(store) {
 }
 
 
+/* ============================================================================
+   后台管理系统页面（会员权限管理）
+   ---------------------------------------------------------------------------
+   · 入口：顶栏「更多」菜单 → 后台管理（data-page="admin"）
+   · 权限：server 驱动 = 当前账号 role 为 admin；local 驱动 = 输入管理口令
+     （默认 admin888，可在此页修改）。两路解封逻辑都在 cloud.js 的
+     cloudAdminUnlocked / cloudAdminLock 里，本页只负责界面。
+   · 能力：总览统计 · 会员列表搜索 · 编辑等级/角色/到期/权限矩阵 · 套用等级预设
+     · 重置绑定码 · 修改管理口令。
+   依赖 cloud.js 的同名函数（同一 IIFE 作用域，无需 import）。
+   整体用 IIFE 包裹，避免顶层标识符与其它模块冲突。
+   ============================================================================ */
+const __mod_admin = (function () {
+  const esc = escapeHtml; // ui.js 提供，外层作用域
+
+  function relTime(ts) {
+    const t = Number(ts) || 0;
+    if (!t) return '—';
+    const d = Date.now() - t;
+    if (d < 60000) return '刚刚';
+    if (d < 3600000) return Math.floor(d / 60000) + ' 分钟前';
+    if (d < 86400000) return Math.floor(d / 3600000) + ' 小时前';
+    return Math.floor(d / 86400000) + ' 天前';
+  }
+  function avaChar(id) {
+    const s = String(id || '?').trim();
+    return s ? s.charAt(0).toUpperCase() : '?';
+  }
+  function lvPill(level) {
+    const name = CLOUD_LEVEL_NAME[level] || '免费用户';
+    return '<span class="pill ' + esc(level) + '">' + esc(name) + '</span>';
+  }
+  function rolePill(role) {
+    if (!role || role === 'student') return '';
+    const name = CLOUD_ROLE_NAME[role] || role;
+    return '<span class="pill ' + esc(role) + '">' + esc(name) + '</span>';
+  }
+  function head(title, sub, onBack) {
+    return '<div class="page-head">'
+      + '<button class="back-btn" id="backBtn" title="返回">'
+      + '<svg class="vico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
+      + '</button>'
+      + '<div class="ph-main"><div class="ph-title">' + esc(title) + '</div>'
+      + (sub ? '<div class="ph-sub">' + esc(sub) + '</div>' : '') + '</div></div>';
+  }
+  function goHome() { window.dispatchEvent(new CustomEvent('goto', { detail: 'overview' })); }
+
+  function render({ view, APP, ctx }) {
+    const app = APP;
+    const c = ctx;
+    view.innerHTML = '<div class="card" style="text-align:center;padding:30px 16px">'
+      + '<div style="font-size:26px">🛡️</div>'
+      + '<div style="margin-top:8px;opacity:.7">正在校验管理员权限…</div></div>';
+    cloudAdminUnlocked().then(function (ok) {
+      if (ok) drawAdmin();
+      else drawLock();
+    }).catch(function () { drawLock(); });
+
+    /* ---------- 未解封：口令 / 提示 ---------- */
+    function drawLock() {
+      const server = cloudMode() === 'server';
+      const serverNoLogin = server && cloudIsGuest();
+      let inner;
+      if (server) {
+        inner = '<div class="card" style="text-align:center;padding:22px 16px">'
+          + '<div style="font-size:26px">🔒</div>'
+          + '<div style="margin:10px 0 4px;font-weight:800">需要管理员账号</div>'
+          + '<div style="opacity:.72;line-height:1.7;font-size:13px">'
+          + (serverNoLogin
+            ? '请先登录管理员账号，再进入本页。'
+            : '当前登录账号「' + esc(cloudSelfLabel()) + '」不是管理员。请在服务器端把该账号的 role 设为 admin。')
+          + '</div></div>';
+        view.innerHTML = head('后台管理', '服务端模式 · 需管理员账号') + inner;
+        const b = view.querySelector('#backBtn');
+        if (b) b.onclick = goHome;
+        return;
+      }
+      // local 驱动：输入管理口令
+      inner = '<div class="card">'
+        + '<div style="text-align:center;font-size:26px">🔐</div>'
+        + '<div style="margin:10px 0 4px;font-weight:800;text-align:center">本机管理模式</div>'
+        + '<p class="hint" style="text-align:center">输入管理口令后可管理本机账号的会员等级与权限。</p>'
+        + '<input id="adminPass" class="num-input" type="password" placeholder="管理口令" style="width:100%;margin:8px 0" />'
+        + '<div id="lockMsg" class="hint" style="color:var(--warn);min-height:16px"></div>'
+        + '<button class="btn block" id="unlockBtn">进入管理后台</button>'
+        + '<p class="hint" style="text-align:center;margin-top:10px">初始口令：<b>admin888</b>（进入后可在页面底部修改）</p>'
+        + '</div>';
+      view.innerHTML = head('后台管理', '本机模式 · 请输入管理口令') + inner;
+      const b = view.querySelector('#backBtn');
+      if (b) b.onclick = goHome;
+      const inp = view.querySelector('#adminPass');
+      const msg = view.querySelector('#lockMsg');
+      const btn = view.querySelector('#unlockBtn');
+      const doUnlock = function () {
+        btn.disabled = true;
+        cloudAdminUnlock(inp.value).then(function (r) {
+          if (r && r.ok) { c.toast('已进入管理后台'); drawAdmin(); }
+          else { msg.textContent = (r && r.msg) || '口令不正确'; btn.disabled = false; inp.value = ''; inp.focus(); }
+        }).catch(function () { msg.textContent = '操作失败，请重试'; btn.disabled = false; });
+      };
+      btn.onclick = doUnlock;
+      if (inp) inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') doUnlock(); });
+    }
+
+    /* ---------- 已解封：总览 + 列表 ---------- */
+    let keyword = '';
+    function drawAdmin() {
+      view.innerHTML = head('会员管理', cloudMode() === 'server' ? '服务端模式 · 实时数据' : '本机模式 · 本机账号数据')
+        + '<div id="adminBody"><div class="card" style="text-align:center;padding:24px;opacity:.7">加载中…</div></div>';
+      const back = view.querySelector('#backBtn');
+      if (back) back.onclick = goHome;
+      refresh();
+    }
+
+    function refresh() {
+      const body = view.querySelector('#adminBody');
+      if (!body) return;
+      body.innerHTML = '<div class="card" style="text-align:center;padding:20px;opacity:.7">加载中…</div>';
+      cloudMembers().then(function (list) {
+        if (list && list.error) {
+          body.innerHTML = '<div class="card">' + esc(list.error) + '</div>';
+          return;
+        }
+        const arr = Array.isArray(list) ? list : [];
+        drawList(body, arr);
+      }).catch(function () {
+        body.innerHTML = '<div class="card">会员列表加载失败，请稍后重试。</div>';
+      });
+    }
+
+    function drawList(body, arr) {
+      const st = cloudMemberStats(arr);
+      let html = '';
+      // 总览
+      html += '<div class="stat-grid">'
+        + statBox(st.total, '会员总数')
+        + statBox(st.byLevel.vip + '+' + st.byLevel.svip, '付费会员')
+        + statBox(st.active7, '近 7 天活跃')
+        + statBox(st.mastered, '累计掌握词')
+        + '</div>';
+      // 搜索
+      html += '<div class="row mt" style="gap:8px">'
+        + '<input id="memSearch" class="num-input" placeholder="搜索账号 / 角色…" value="' + esc(keyword) + '" style="flex:1;width:auto" />'
+        + '<button class="btn sm gray" id="memRefresh" title="刷新">刷新</button>'
+        + '</div>';
+      // 列表
+      const kw = keyword.trim().toLowerCase();
+      const shown = kw
+        ? arr.filter(function (m) {
+          return String(m.id).toLowerCase().indexOf(kw) >= 0
+            || (CLOUD_LEVEL_NAME[m.level] || '').toLowerCase().indexOf(kw) >= 0
+            || (CLOUD_ROLE_NAME[m.role] || '').toLowerCase().indexOf(kw) >= 0;
+        })
+        : arr;
+      html += '<div class="section-title mt" style="font-size:14px">会员列表（' + shown.length + '/' + arr.length + '）</div>';
+      if (!shown.length) {
+        html += '<div class="card" style="text-align:center;opacity:.7;padding:20px">'
+          + (arr.length ? '没有匹配的账号' : '本机暂无会员记录<br/><span style="font-size:12px">登录任一账号后会自动建立会员档</span>') + '</div>';
+      } else {
+        shown.forEach(function (m) {
+          const s = m.summary || {};
+          const meta = '最近活跃 ' + relTime(m.lastSeen)
+            + ' · 掌握 <b>' + (s.mastered || 0) + '</b>'
+            + ' · ⭐ ' + (s.stars || 0)
+            + (m.children && m.children.length ? ' · 孩子 ' + m.children.length : '')
+            + (m.expire ? ' · 到期 ' + esc(m.expire) : '');
+          html += '<div class="mem-row" data-id="' + esc(m.id) + '">'
+            + '<div class="mem-ava">' + esc(avaChar(m.id)) + '</div>'
+            + '<div class="mem-main">'
+            + '<div class="mem-name">' + esc(m.id)
+            + (m.isSelf ? ' <span class="pill free">本机</span>' : '')
+            + ' ' + lvPill(m.level) + ' ' + rolePill(m.role) + '</div>'
+            + '<div class="mem-meta">' + meta + '</div>'
+            + '</div>'
+            + '<div class="mem-go">›</div>'
+            + '</div>';
+        });
+      }
+      // 管理口令（local 模式）
+      if (cloudMode() !== 'server') {
+        html += '<div class="set-group mt"><div class="set-title">管理口令</div>'
+          + '<div class="row" style="gap:8px">'
+          + '<input id="newPass" class="num-input" type="password" placeholder="新口令（≥4 位）" style="flex:1;width:auto" />'
+          + '<button class="btn sm gray" id="savePass">修改</button>'
+          + '</div>'
+          + '<div class="row mt"><button class="btn sm gray" id="lockAdmin">锁定并退出管理模式</button></div>'
+          + '</div>';
+      }
+      body.innerHTML = html;
+
+      // 事件
+      const search = body.querySelector('#memSearch');
+      if (search) search.addEventListener('input', function () { keyword = search.value; redrawListPreserveFocus(); });
+      const rf = body.querySelector('#memRefresh');
+      if (rf) rf.onclick = function () { c.toast('已刷新'); refresh(); };
+      body.querySelectorAll('.mem-row').forEach(function (row) {
+        row.addEventListener('click', function () {
+          const mem = arr.filter(function (x) { return x.id === row.dataset.id; })[0];
+          if (mem) drawMember(mem, arr);
+        });
+      });
+      const savePass = body.querySelector('#savePass');
+      if (savePass) savePass.onclick = function () {
+        const v = body.querySelector('#newPass').value;
+        const r = cloudSetAdminPass(v);
+        if (r.ok) { c.toast('管理口令已更新'); body.querySelector('#newPass').value = ''; }
+        else c.toast(r.msg || '修改失败');
+      };
+      const lock = body.querySelector('#lockAdmin');
+      if (lock) lock.onclick = function () {
+        cloudAdminLock();
+        c.toast('已锁定管理模式');
+        if (typeof refreshHeader === 'function') refreshHeader();
+        drawLock();
+      };
+    }
+
+    function redrawListPreserveFocus() {
+      cloudMembers().then(function (list) {
+        const body = view.querySelector('#adminBody');
+        if (!body || !Array.isArray(list)) return;
+        const val = keyword;
+        drawList(body, list);
+        const s = body.querySelector('#memSearch');
+        if (s) { s.value = val; s.focus(); const l = s.value.length; try { s.setSelectionRange(l, l); } catch (e) { /* ignore */ } }
+      });
+    }
+
+    function statBox(n, label) {
+      return '<div class="stat-box"><b>' + esc(String(n == null ? 0 : n)) + '</b><span>' + esc(label) + '</span></div>';
+    }
+
+    /* ---------- 编辑单个会员 ---------- */
+    function drawMember(mem, arr) {
+      const perm = cloudNormPerm(mem.perm);
+      const feat = perm.features || {};
+      const featHtml = CLOUD_FEATURES.map(function (f) {
+        const on = feat[f.key] !== false; // 未设置 = 允许
+        return '<label><input type="checkbox" data-f="' + f.key + '"' + (on ? ' checked' : '') + '> ' + esc(f.name) + '</label>';
+      }).join('');
+      const lvHtml = CLOUD_LEVELS.map(function (l) {
+        return '<button class="chip' + (mem.level === l.key ? ' on' : '') + '" data-lv="' + l.key + '">' + esc(l.name) + '</button>';
+      }).join('');
+      const roleHtml = CLOUD_ROLES.map(function (r) {
+        return '<button class="chip' + (mem.role === r.key ? ' on' : '') + '" data-role="' + r.key + '">' + esc(r.name) + '</button>';
+      }).join('');
+      const s = mem.summary || {};
+      view.innerHTML = head('编辑会员', mem.id)
+        + '<div class="card">'
+        + '<div class="mem-row" style="cursor:default;margin-bottom:12px">'
+        + '<div class="mem-ava">' + esc(avaChar(mem.id)) + '</div>'
+        + '<div class="mem-main"><div class="mem-name">' + esc(mem.id) + ' ' + lvPill(mem.level) + '</div>'
+        + '<div class="mem-meta">掌握 ' + (s.mastered || 0) + ' · ⭐ ' + (s.stars || 0) + ' · 错词 ' + (s.wrongBook || 0) + ' · 最近活跃 ' + relTime(mem.lastSeen) + '</div></div>'
+        + '</div>'
+
+        + '<div class="set-title">会员等级</div>'
+        + '<div class="role-opts" id="lvOpts">' + lvHtml + '</div>'
+
+        + '<div class="set-title mt">账号角色</div>'
+        + '<div class="role-opts" id="roleOpts">' + roleHtml + '</div>'
+        + '<p class="hint" style="margin:6px 0 0">角色「管理员」可在服务端模式下访问本后台；「家长」可绑定孩子。</p>'
+
+        + '<div class="set-title mt">到期日</div>'
+        + '<input type="text" class="num-input" id="mExpire" placeholder="YYYY-MM-DD（留空 = 不过期）" value="' + esc(mem.expire || '') + '" style="width:100%" />'
+
+        + '<div class="set-title mt">权限配置</div>'
+        + '<div class="row between" style="margin-bottom:8px"><span class="hint" style="margin:0">0 或未勾选功能 = 不限制</span>'
+        + '<button class="btn sm soft" id="applyPreset">套用等级预设</button></div>'
+        + '<div class="perm-form">'
+        + permItem('每日新词上限', '0 = 不限', 'pDaily', perm.dailyNewMax, 9999)
+        + permItem('AI 练每日上限', '0 = 不限', 'pAi', perm.aiDailyMax, 9999)
+        + permItem('阅读篇数上限', '0 = 不限', 'pRead', perm.readingMax, 9999)
+        + '</div>'
+
+        + '<div class="set-title mt">功能模块开关</div>'
+        + '<div class="perm-sw" id="pFeat">' + featHtml + '</div>'
+
+        + '<div class="set-title mt">绑定码（孩子/其它终端配对用）</div>'
+        + '<div class="my-code" id="bindCode">' + esc(mem.bindCode || '——') + '</div>'
+        + '<button class="btn sm gray" id="resetCode">重置绑定码</button>'
+
+        + (mem.note ? '<p class="hint mt">备注：' + esc(mem.note) + '</p>' : '')
+        + '</div>'
+        + '<div class="row mt"><button class="btn block" id="saveMember">保存修改</button></div>';
+
+      const backBtn = view.querySelector('#backBtn');
+      if (backBtn) backBtn.onclick = function () { drawAdmin(); };
+
+      // 等级 / 角色 chip 单选
+      let level = mem.level;
+      let role = mem.role;
+      const lvOpts = view.querySelector('#lvOpts');
+      const roleOpts = view.querySelector('#roleOpts');
+      lvOpts.querySelectorAll('.chip').forEach(function (b) {
+        b.onclick = function () {
+          level = b.dataset.lv;
+          lvOpts.querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('on', x === b); });
+        };
+      });
+      roleOpts.querySelectorAll('.chip').forEach(function (b) {
+        b.onclick = function () {
+          role = b.dataset.role;
+          roleOpts.querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('on', x === b); });
+        };
+      });
+      // 套用等级预设
+      view.querySelector('#applyPreset').onclick = function () {
+        const pr = CLOUD_PRESETS[level];
+        if (!pr) { c.toast('该等级暂无预设'); return; }
+        view.querySelector('#pDaily').value = pr.dailyNewMax;
+        view.querySelector('#pAi').value = pr.aiDailyMax;
+        view.querySelector('#pRead').value = pr.readingMax;
+        view.querySelectorAll('#pFeat input').forEach(function (cb) {
+          cb.checked = pr.features[cb.dataset.f] !== false;
+        });
+        c.toast('已套用「' + (CLOUD_LEVEL_NAME[level] || level) + '」预设');
+      };
+      // 重置绑定码
+      view.querySelector('#resetCode').onclick = function () {
+        const code = cloudGenCode();
+        view.querySelector('#bindCode').textContent = code;
+        c.toast('新绑定码：' + code + '（点保存后生效）');
+      };
+      // 保存
+      view.querySelector('#saveMember').onclick = function () {
+        const num = function (id) { const n = Math.max(0, Math.round(Number(view.querySelector('#' + id).value) || 0)); return n; };
+        const features = {};
+        view.querySelectorAll('#pFeat input').forEach(function (cb) { features[cb.dataset.f] = !!cb.checked; });
+        const patch = {
+          level: level,
+          role: role,
+          expire: (view.querySelector('#mExpire').value || '').trim(),
+          bindCode: view.querySelector('#bindCode').textContent.trim(),
+          perm: { dailyNewMax: num('pDaily'), aiDailyMax: num('pAi'), readingMax: num('pRead'), features: features },
+        };
+        const btn = view.querySelector('#saveMember');
+        btn.disabled = true;
+        cloudSaveMember(mem.id, patch).then(function (r) {
+          if (r && r.ok === false) { c.toast(r.msg || '保存失败'); btn.disabled = false; return; }
+          c.toast('已保存「' + mem.id + '」的会员设置');
+          // 若改的是自己，刷新内存态与顶栏（管理员入口显隐）
+          if (mem.isSelf || mem.id === cloudSelfId()) {
+            cloudRefreshSelf().then(function () { if (typeof refreshHeader === 'function') refreshHeader(); });
+          }
+          drawAdmin();
+        }).catch(function () { c.toast('保存失败，请重试'); btn.disabled = false; });
+      };
+    }
+
+    function permItem(name, sub, id, val, max) {
+      return '<div class="perm-item"><span class="pi-name">' + esc(name) + '<small>' + esc(sub) + '</small></span>'
+        + '<input type="number" class="num-input" id="' + id + '" min="0" max="' + max + '" value="' + (Number(val) || 0) + '" /></div>';
+    }
+  }
+
+  return { render: render };
+})();
+
+
 // AI 练：总入口，包含 语法练 / 单词练 / 听力练 / 错题练 四个模块
 
 // 图标统一采用底部导航同一套 1.8px 线性 SVG（IC），与整体设计语言一致
@@ -2874,6 +3236,562 @@ function openCategory(view, ctx, title, words, onBack, startIdx) {
   }
 
   render();
+}
+
+
+/* ============================================================================
+   会员 / 权限 / 家长绑定 —— 数据层（云数据中枢）
+   ---------------------------------------------------------------------------
+   两种驱动，暴露同一套异步 API，页面模块（admin.js / parent.js）无需关心：
+     · server 驱动：Node 后端在线时（server.js 提供 /api/me/member、/api/admin/*、
+       /api/parent/*），会员表持久化在 data/users.json，进度在 data/progress.json，
+       家长看到的是孩子账号的**实时**学习数据（跨设备）。
+     · local 驱动：GitHub Pages 纯静态托管（无后端）时的本机模式。会员表存
+       localStorage；家长绑定孩子有两种方式：
+         ① 同浏览器账号：孩子的账号就在这台设备上 → 直接读其本地进度（实时）
+         ② 跨设备同步码：孩子在自己的设备上「生成同步码」（HV1: 前缀的紧凑快照），
+            家长粘贴即可看到该时刻的学习情况（离线可用，零后端）
+   ⚠️ 权限语义：0 或未设置的项 = **不限制**（管理端没配置过就不改变产品原有行为）。
+   ============================================================================ */
+
+const CLOUD_MEMBERS_KEY = 'happy-vocab-members-v1';
+const CLOUD_ADMIN_PASS_KEY = 'happy-vocab-admin-pass-v1';
+const CLOUD_ADMIN_OK_KEY = 'happy-vocab-admin-ok-v1';
+const CLOUD_DEFAULT_ADMIN_PASS = 'admin888';
+const CLOUD_SNAP_PREFIX = 'HV1:';
+const CLOUD_PROGRESS_KEY = 'happy-vocab-progress-v1';
+const CLOUD_LOCAL_USERS_KEY = 'happy-vocab-local-users-v1';
+
+/* ---------- 枚举与预设 ---------- */
+const CLOUD_LEVELS = [
+  { key: 'free', name: '免费用户', desc: '基础词库与听写' },
+  { key: 'vip', name: 'VIP 会员', desc: '全功能 · 中等配额' },
+  { key: 'svip', name: 'SVIP 会员', desc: '全功能 · 不限量' },
+];
+const CLOUD_LEVEL_NAME = { free: '免费用户', vip: 'VIP 会员', svip: 'SVIP 会员' };
+const CLOUD_ROLES = [
+  { key: 'student', name: '学生' },
+  { key: 'parent', name: '家长' },
+  { key: 'admin', name: '管理员' },
+];
+const CLOUD_ROLE_NAME = { student: '学生', parent: '家长', admin: '管理员' };
+// 可开关的功能模块（key 与 _PAGE_FEATURE 对应）
+const CLOUD_FEATURES = [
+  { key: 'dictation', name: '听写记' },
+  { key: 'category', name: '分类记' },
+  { key: 'reading', name: '阅读记' },
+  { key: 'wordji', name: '单词记' },
+  { key: 'ai', name: 'AI 练（语法/单词/错题）' },
+  { key: 'listening', name: '听力练' },
+];
+// 页面 → 功能开关 key（未列出的页面不受权限限制）
+const CLOUD_PAGE_FEATURE = {
+  dictation: 'dictation', category: 'category', reading: 'reading', wordji: 'wordji',
+  aiall: 'ai', aigrammar: 'ai', aiword: 'ai', aiwrong: 'ai', listening: 'listening',
+};
+// 等级预设：管理员点「套用」时把该等级的权限写进会员记录
+const CLOUD_PRESETS = {
+  free: {
+    dailyNewMax: 100, aiDailyMax: 10, readingMax: 40,
+    features: { dictation: true, category: true, reading: true, wordji: false, ai: false, listening: false },
+  },
+  vip: {
+    dailyNewMax: 500, aiDailyMax: 50, readingMax: 190,
+    features: { dictation: true, category: true, reading: true, wordji: true, ai: true, listening: true },
+  },
+  svip: {
+    dailyNewMax: 0, aiDailyMax: 0, readingMax: 0,
+    features: { dictation: true, category: true, reading: true, wordji: true, ai: true, listening: true },
+  },
+};
+
+/* ---------- 基础工具 ---------- */
+function cloudDayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+function cloudToday() { return cloudDayKey(new Date()); }
+function cloudReadJSON(key, def) {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : def; } catch (e) { return def; }
+}
+function cloudWriteJSON(key, v) {
+  try { localStorage.setItem(key, JSON.stringify(v)); return true; } catch (e) { return false; }
+}
+function cloudGenCode() {
+  let s = '';
+  for (let i = 0; i < 6; i++) s += String(Math.floor(Math.random() * 10));
+  return s;
+}
+function cloudEmptyPerm() { return { dailyNewMax: 0, aiDailyMax: 0, readingMax: 0, features: {} }; }
+function cloudNormPerm(raw) {
+  const p = raw || {};
+  const f = {};
+  for (const it of CLOUD_FEATURES) {
+    if (p.features && typeof p.features[it.key] === 'boolean') f[it.key] = p.features[it.key];
+  }
+  return {
+    dailyNewMax: Math.max(0, Number(p.dailyNewMax) || 0),
+    aiDailyMax: Math.max(0, Number(p.aiDailyMax) || 0),
+    readingMax: Math.max(0, Number(p.readingMax) || 0),
+    features: f,
+  };
+}
+// 是否「未做任何限制」：用于管理页提示与快速判断
+function cloudPermIsFree(p) {
+  const q = cloudNormPerm(p);
+  return !q.dailyNewMax && !q.aiDailyMax && !q.readingMax && Object.keys(q.features).length === 0;
+}
+function cloudNormMember(raw, id) {
+  const m = raw || {};
+  return {
+    id: String(id || m.id || ''),
+    role: CLOUD_ROLE_NAME[m.role] ? m.role : 'student',
+    level: CLOUD_LEVEL_NAME[m.level] ? m.level : 'free',
+    expire: m.expire || '',
+    perm: cloudNormPerm(m.perm),
+    bindCode: String(m.bindCode || ''),
+    children: Array.isArray(m.children)
+      ? m.children.filter((c) => c && c.id).map((c) => ({
+        id: String(c.id), at: c.at || 0, snap: c.snap || null,
+        name: c.name || String(c.id), plan: Math.max(0, Number(c.plan) || 0),
+      }))
+      : [],
+    parent: m.parent || null,
+    note: m.note || '',
+    createdAt: m.createdAt || Date.now(),
+    lastSeen: m.lastSeen || 0,
+  };
+}
+function cloudSelfId() {
+  const A = window.APP || {};
+  if (A.user && A.user.id) return A.user.id;
+  return 'default';
+}
+function cloudSelfLabel() {
+  const A = window.APP || {};
+  if (A.user && A.user.id) return A.user.id + (A.user.local ? '（本机账号）' : '');
+  return '未登录（本机访客）';
+}
+// server 驱动判定：后端在线且当前是服务器账号
+function cloudMode() {
+  const A = window.APP || {};
+  return (A.hasBackend && A.user && !A.user.local) ? 'server' : 'local';
+}
+function cloudIsGuest() {
+  const A = window.APP || {};
+  return !(A.user && A.user.id);
+}
+
+/* ---------- 本机存储（local 驱动） ---------- */
+function cloudStore() { const s = cloudReadJSON(CLOUD_MEMBERS_KEY, {}); return (s && typeof s === 'object') ? s : {}; }
+function cloudSaveStore(store) { return cloudWriteJSON(CLOUD_MEMBERS_KEY, store); }
+function cloudLocalUsers() { const u = cloudReadJSON(CLOUD_LOCAL_USERS_KEY, {}); return (u && typeof u === 'object') ? u : {}; }
+// 某个本机账号的进度（'default' 为匿名桶；本机账号桶为 SAVE_KEY-<用户名>）
+function cloudLocalProgress(userId) {
+  if (!userId || userId === 'default') return cloudReadJSON(CLOUD_PROGRESS_KEY, null);
+  return cloudReadJSON(CLOUD_PROGRESS_KEY + '-' + userId, null);
+}
+function cloudHasLocalUser(userId) {
+  if (!userId) return false;
+  if (userId === 'default') return true;
+  return !!cloudLocalUsers()[userId] || !!cloudLocalProgress(userId);
+}
+
+/* ---------- 学习情况摘要 ---------- */
+// 由一份 progress 计算家长/后台要看的指标（与前端进度结构一致）
+function cloudBuildSummary(progress, opt) {
+  const p = progress || {};
+  const o = opt || {};
+  const mastered = Object.keys(p.mastered || {}).length;
+  const wrongCount = p.wrongCount || {};
+  const weak = Object.keys(wrongCount)
+    .sort((a, b) => (wrongCount[b] || 0) - (wrongCount[a] || 0))
+    .slice(0, 6)
+    .map((w) => ({ w: w, n: wrongCount[w] || 0 }));
+  const day = p.daily || {};
+  const today = cloudToday();
+  const isToday = day.date === today;
+  const todayDone = isToday ? (Number(day.newWords) || 0) : 0;
+  const plan = Number(o.dailyNew) || 0;
+  const hist = p.history || {};
+  // 近 7 天（含今天）
+  const week = [];
+  for (let k = 6; k >= 0; k--) {
+    const d = new Date(Date.now() - k * 86400000);
+    const key = cloudDayKey(d);
+    const h = hist[key] || {};
+    const now = key === today;
+    week.push({
+      date: key,
+      newWords: now ? todayDone : (Number(h.newWords) || 0),
+      rounds: now ? (Number(day.rounds) || 0) : (Number(h.rounds) || 0),
+      correct: now ? (Number(day.correct) || 0) : (Number(h.correct) || 0),
+      wrong: now ? (Number(day.wrong) || 0) : (Number(h.wrong) || 0),
+    });
+  }
+  // 连续打卡：从今天往前数「有作答轮次」的连续天数（今天还没学不打断，从昨天继续算）
+  let streak = 0;
+  for (let k = 0; k < 400; k++) {
+    const d = new Date(Date.now() - k * 86400000);
+    const key = cloudDayKey(d);
+    const src = key === today ? (isToday ? day : null) : hist[key];
+    const rounds = src ? (Number(src.rounds) || 0) : 0;
+    if (rounds > 0) streak++;
+    else if (k > 0) break;
+  }
+  return {
+    stars: Number(p.stars) || 0,
+    mastered: mastered,
+    learned: Object.keys(p.learned || {}).length,
+    wrongBook: Array.isArray(p.wrongBook) ? p.wrongBook.length : 0,
+    notebook: Array.isArray(p.notebook) ? p.notebook.length : 0,
+    todayDone: todayDone,
+    todayRounds: isToday ? (Number(day.rounds) || 0) : 0,
+    todayCorrect: isToday ? (Number(day.correct) || 0) : 0,
+    todayWrong: isToday ? (Number(day.wrong) || 0) : 0,
+    plan: plan,
+    percent: plan > 0 ? Math.min(100, Math.round((todayDone / plan) * 100)) : 0,
+    streak: streak,
+    week: week,
+    weak: weak,
+    at: Number(o.at) || 0,
+    source: o.source || 'local',
+  };
+}
+// 近 7 天迷你曲线（纯 SVG，宽 320 高 64，蓝柱=每日新词）
+function cloudWeekSVG(week) {
+  const w = Array.isArray(week) ? week : [];
+  const H = 64, padB = 14, padT = 6;
+  const max = Math.max(1, ...w.map((d) => d.newWords || 0));
+  const n = Math.max(1, w.length);
+  const bw = 320 / n;
+  let bars = '';
+  let labels = '';
+  w.forEach((d, i) => {
+    const h = Math.round(((d.newWords || 0) / max) * (H - padB - padT));
+    const x = i * bw + bw * 0.22;
+    const y = H - padB - h;
+    bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + (bw * 0.56).toFixed(1)
+      + '" height="' + Math.max(2, h) + '" rx="2.5" fill="' + ((d.newWords || 0) ? '#6281f4' : '#e6ebf5') + '"/>';
+    labels += '<text x="' + (i * bw + bw / 2).toFixed(1) + '" y="' + (H - 3)
+      + '" font-size="9" fill="#9098a8" text-anchor="middle">' + (d.date ? d.date.split('-').slice(1).join('/') : '') + '</text>';
+  });
+  return '<svg class="mini-chart" viewBox="0 0 320 ' + H + '" width="100%" preserveAspectRatio="none" style="display:block">'
+    + bars + labels + '</svg>';
+}
+
+/* ---------- 同步码（跨设备，local 驱动专用） ---------- */
+function cloudB64Encode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function cloudB64Decode(s) {
+  const t = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = (4 - (t.length % 4)) % 4;
+  const bin = atob(t + '='.repeat(pad));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+// 把当前设备的学习情况打包成「同步码」（家长粘贴用）
+function cloudMakeSnapshot() {
+  const A = window.APP || {};
+  const p = A.progress || {};
+  const s = A.settings || {};
+  const sum = cloudBuildSummary(p, { dailyNew: s.dailyNew, at: Date.now(), source: 'local' });
+  const pack = {
+    v: 1, id: cloudSelfId(), at: Date.now(),
+    s: sum.stars, m: sum.mastered, y: sum.learned, w: sum.wrongBook, n: sum.notebook,
+    d: { n: sum.todayDone, r: sum.todayRounds, c: sum.todayCorrect, x: sum.todayWrong },
+    plan: sum.plan, st: sum.streak,
+    h: (sum.week || []).map((d) => [d.date, d.newWords, d.rounds, d.correct, d.wrong]),
+    k: sum.weak.map((x) => [x.w, x.n]),
+  };
+  return CLOUD_SNAP_PREFIX + cloudB64Encode(JSON.stringify(pack));
+}
+// 解析同步码 → 摘要（与实时摘要同结构，便于同一张卡片渲染）
+function cloudReadSnapshot(code) {
+  const raw = String(code || '').trim().replace(/\s+/g, '');
+  const body = raw.startsWith(CLOUD_SNAP_PREFIX) ? raw.slice(CLOUD_SNAP_PREFIX.length) : raw;
+  let pack;
+  try { pack = JSON.parse(cloudB64Decode(body)); } catch (e) { return null; }
+  if (!pack || typeof pack !== 'object') return null;
+  const week = Array.isArray(pack.h) ? pack.h.map((r) => ({
+    date: r[0], newWords: Number(r[1]) || 0, rounds: Number(r[2]) || 0,
+    correct: Number(r[3]) || 0, wrong: Number(r[4]) || 0,
+  })) : [];
+  const plan = Number(pack.plan) || 0;
+  const todayDone = (pack.d && Number(pack.d.n)) || 0;
+  return {
+    stars: Number(pack.s) || 0, mastered: Number(pack.m) || 0, learned: Number(pack.y) || 0,
+    wrongBook: Number(pack.w) || 0, notebook: Number(pack.n) || 0,
+    todayDone: todayDone, todayRounds: (pack.d && Number(pack.d.r)) || 0,
+    todayCorrect: (pack.d && Number(pack.d.c)) || 0, todayWrong: (pack.d && Number(pack.d.x)) || 0,
+    plan: plan, percent: plan > 0 ? Math.min(100, Math.round((todayDone / plan) * 100)) : 0,
+    streak: Number(pack.st) || 0, week: week,
+    weak: Array.isArray(pack.k) ? pack.k.map((r) => ({ w: r[0], n: Number(r[1]) || 0 })) : [],
+    at: Number(pack.at) || 0, source: 'code', childId: pack.id || '',
+  };
+}
+
+/* ---------- 当前会员（自己） ---------- */
+async function cloudMe() {
+  const id = cloudSelfId();
+  if (cloudMode() === 'server') {
+    try {
+      const r = await safeFetch('/api/me/member');
+      const j = await r.json();
+      if (j && j.member) return cloudNormMember(j.member, j.member.id);
+    } catch (e) { /* 后端异常：降级本机记录 */ }
+  }
+  const store = cloudStore();
+  let m = cloudNormMember(store[id], id);
+  if (!m.bindCode) m.bindCode = cloudGenCode();
+  m.lastSeen = Date.now();
+  store[id] = m;
+  cloudSaveStore(store);
+  return m;
+}
+// 保存会员信息（管理端改他人时才传 id）
+async function cloudSaveMember(id, patch) {
+  const target = id || cloudSelfId();
+  if (cloudMode() === 'server') {
+    const r = await safeFetch('/api/admin/member', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: target, patch: patch || {} }),
+    });
+    return await r.json().catch(() => ({ ok: false, msg: '响应异常' }));
+  }
+  const store = cloudStore();
+  const cur = cloudNormMember(store[target], target);
+  if (!cur.bindCode) cur.bindCode = cloudGenCode();
+  const merged = cloudNormMember(Object.assign({}, cur, patch || {}, {
+    perm: patch && patch.perm ? patch.perm : cur.perm,
+    children: patch && patch.children ? patch.children : cur.children,
+    id: target,
+  }), target);
+  merged.lastSeen = Date.now();
+  store[target] = merged;
+  cloudSaveStore(store);
+  return { ok: true, member: merged };
+}
+// 刷新内存中的「我的会员信息」（登录后 / 后台同步时调用）
+async function cloudRefreshSelf() {
+  const A = window.APP || {};
+  const me = await cloudMe();
+  A.member = me;
+  return me;
+}
+
+/* ---------- 管理端：会员列表 ---------- */
+async function cloudMembers() {
+  if (cloudMode() === 'server') {
+    try {
+      const r = await safeFetch('/api/admin/members');
+      const j = await r.json();
+      if (j && j.ok && Array.isArray(j.members)) return j.members;
+      if (j && j.msg) return { error: j.msg };
+    } catch (e) { /* 降级本机 */ }
+  }
+  const store = cloudStore();
+  const meId = cloudSelfId();
+  if (!store[meId]) {
+    const m = cloudNormMember({ bindCode: cloudGenCode(), role: 'admin' }, meId);
+    m.lastSeen = Date.now();
+    store[meId] = m;
+    cloudSaveStore(store);
+  }
+  const out = [];
+  for (const key of Object.keys(store)) {
+    const m = cloudNormMember(store[key], key);
+    const prog = cloudLocalProgress(key);
+    const sum = cloudBuildSummary(prog, { dailyNew: 0, at: prog ? Date.now() : 0, source: prog ? 'local' : 'none' });
+    out.push(Object.assign({}, m, { summary: sum, hasProgress: !!prog, isSelf: key === meId }));
+  }
+  out.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+  return out;
+}
+// 管理端总览数字
+function cloudMemberStats(list) {
+  const arr = Array.isArray(list) ? list : [];
+  const now = Date.now();
+  const byLevel = { free: 0, vip: 0, svip: 0 };
+  let active7 = 0, mastered = 0, stars = 0;
+  for (const m of arr) {
+    byLevel[m.level] = (byLevel[m.level] || 0) + 1;
+    if (m.lastSeen && now - m.lastSeen < 7 * 86400000) active7++;
+    const s = m.summary || {};
+    mastered += s.mastered || 0;
+    stars += s.stars || 0;
+  }
+  return { total: arr.length, byLevel: byLevel, active7: active7, mastered: mastered, stars: stars };
+}
+
+/* ---------- 家长端：绑定关系 ---------- */
+async function cloudChildren() {
+  if (cloudMode() === 'server') {
+    try {
+      const r = await safeFetch('/api/parent/children');
+      const j = await r.json();
+      if (j && j.ok && Array.isArray(j.children)) return j.children;
+      if (j && j.msg) return { error: j.msg };
+    } catch (e) { /* 降级本机 */ }
+  }
+  const me = await cloudMe();
+  const out = [];
+  for (const c of me.children || []) {
+    const prog = cloudLocalProgress(c.id);
+    const sum = prog
+      ? cloudBuildSummary(prog, { dailyNew: (c.plan || 0), at: Date.now(), source: 'local' })
+      : (c.snap ? cloudReadSnapshot(c.snap) : null);
+    out.push({ id: c.id, at: c.at || 0, name: c.name || c.id, summary: sum, live: !!prog, snapAt: c.snap ? (cloudReadSnapshot(c.snap) || {}).at : 0 });
+  }
+  return out;
+}
+// 绑定孩子：传 { code } 绑定码/同步码，或 { id } 本机账号
+async function cloudBindChild(input) {
+  const it = input || {};
+  const code = String(it.code || '').trim();
+  const rawId = String(it.id || '').trim();
+  if (cloudMode() === 'server') {
+    const r = await safeFetch('/api/parent/bind', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code, id: rawId }),
+    });
+    return await r.json().catch(() => ({ ok: false, msg: '响应异常' }));
+  }
+  if (!code && !rawId) return { ok: false, msg: '请填写绑定码或账号名' };
+  const me = await cloudMe();
+  const kids = (me.children || []).slice();
+  // ① 同步码（HV1: 前缀或 base64 快照）
+  if (code && (code.startsWith(CLOUD_SNAP_PREFIX) || code.length > 40)) {
+    const sum = cloudReadSnapshot(code);
+    if (!sum) return { ok: false, msg: '同步码无法识别，请确认完整复制' };
+    const cid = sum.childId || rawId;
+    if (!cid) return { ok: false, msg: '同步码缺少账号信息' };
+    if (cid === cloudSelfId()) return { ok: false, msg: '不能绑定自己' };
+    const exist = kids.find((k) => k.id === cid);
+    const rec = { id: cid, at: Date.now(), snap: code.startsWith(CLOUD_SNAP_PREFIX) ? code : (CLOUD_SNAP_PREFIX + code) };
+    if (exist) Object.assign(exist, rec); else kids.push(rec);
+    await cloudSaveMember(cloudSelfId(), { children: kids, role: (me.role === 'admin' ? 'admin' : 'parent') });
+    return { ok: true, id: cid, mode: 'code' };
+  }
+  // ② 本机账号（同浏览器）
+  const cid = rawId || code;
+  if (!cid) return { ok: false, msg: '请填写账号名' };
+  if (cid === cloudSelfId()) return { ok: false, msg: '不能绑定自己' };
+  if (!cloudHasLocalUser(cid)) return { ok: false, msg: '本机没有找到账号「' + cid + '」，请改用同步码绑定' };
+  const exist = kids.find((k) => k.id === cid);
+  if (exist) return { ok: false, msg: '已经绑定过该账号' };
+  kids.push({ id: cid, at: Date.now(), snap: null });
+  await cloudSaveMember(cloudSelfId(), { children: kids, role: (me.role === 'admin' ? 'admin' : 'parent') });
+  return { ok: true, id: cid, mode: 'live' };
+}
+async function cloudUnbindChild(childId) {
+  if (cloudMode() === 'server') {
+    const r = await safeFetch('/api/parent/unbind', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: childId }),
+    });
+    return await r.json().catch(() => ({ ok: false, msg: '响应异常' }));
+  }
+  const me = await cloudMe();
+  const kids = (me.children || []).filter((k) => k.id !== childId);
+  await cloudSaveMember(cloudSelfId(), { children: kids });
+  return { ok: true };
+}
+// 家长给孩子设每日目标（同浏览器账号可写进孩子的本机设置）
+async function cloudSetChildPlan(childId, plan) {
+  const n = Math.max(0, Number(plan) || 0);
+  if (cloudMode() === 'server') {
+    const r = await safeFetch('/api/parent/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: childId, plan: n }),
+    });
+    return await r.json().catch(() => ({ ok: false, msg: '响应异常' }));
+  }
+  const me = await cloudMe();
+  const kids = (me.children || []).map((k) => (k.id === childId ? Object.assign({}, k, { plan: n }) : k));
+  await cloudSaveMember(cloudSelfId(), { children: kids });
+  return { ok: true };
+}
+
+/* ---------- 管理口令（local 驱动） ---------- */
+function cloudAdminPass() {
+  try { return localStorage.getItem(CLOUD_ADMIN_PASS_KEY) || CLOUD_DEFAULT_ADMIN_PASS; } catch (e) { return CLOUD_DEFAULT_ADMIN_PASS; }
+}
+function cloudSetAdminPass(p) {
+  const v = String(p || '').trim();
+  if (v.length < 4) return { ok: false, msg: '口令至少 4 位' };
+  try { localStorage.setItem(CLOUD_ADMIN_PASS_KEY, v); return { ok: true }; } catch (e) { return { ok: false, msg: '本机存储不可用' }; }
+}
+async function cloudAdminUnlocked() {
+  if (cloudMode() === 'server') {
+    try { const me = await cloudMe(); return me.role === 'admin'; } catch (e) { return false; }
+  }
+  try { return localStorage.getItem(CLOUD_ADMIN_OK_KEY) === '1'; } catch (e) { return false; }
+}
+async function cloudAdminUnlock(pass) {
+  if (cloudMode() === 'server') {
+    const me = await cloudMe();
+    if (me.role !== 'admin') return { ok: false, msg: '当前账号不是管理员（请在服务器端将该账号设为管理员）' };
+    return { ok: true };
+  }
+  if (String(pass || '') !== cloudAdminPass()) return { ok: false, msg: '管理口令不正确' };
+  try { localStorage.setItem(CLOUD_ADMIN_OK_KEY, '1'); } catch (e) { /* ignore */ }
+  return { ok: true };
+}
+function cloudAdminLock() { try { localStorage.removeItem(CLOUD_ADMIN_OK_KEY); } catch (e) { /* ignore */ } }
+function cloudIsMaker() { return cloudMode() === 'local'; }
+// 同步版：当前是否已解封管理员（供 refreshHeader 等同步场景判断，避免 await）
+function cloudAdminUnlockedSync() {
+  if (cloudMode() === 'server') {
+    const A = window.APP || {};
+    return !!(A.member && A.member.role === 'admin');
+  }
+  try { return localStorage.getItem(CLOUD_ADMIN_OK_KEY) === '1'; } catch (e) { return false; }
+}
+// 顶栏「后台管理」入口是否显示：本机模式常显（便于进入口令页）；服务端仅管理员可见
+function cloudAdminEntryVisible() {
+  if (cloudMode() === 'server') {
+    const A = window.APP || {};
+    return !!(A.member && A.member.role === 'admin');
+  }
+  return true;
+}
+
+/* ---------- 权限生效：给主控制器/设置页用 ---------- */
+function cloudPermActive() {
+  const A = window.APP || {};
+  return cloudNormPerm(A.member ? A.member.perm : null);
+}
+// 页面是否被权限允许（未配置的功能开关 = 允许）
+function cloudPermAllows(page) {
+  const key = CLOUD_PAGE_FEATURE[page];
+  if (!key) return true;
+  const p = cloudPermActive();
+  return p.features[key] !== false;
+}
+// 每日新词上限（0 = 不限），用于设置页输入框上限与保存时 clamp
+function cloudDailyNewMax() { return cloudPermActive().dailyNewMax || 0; }
+function cloudAiDailyMax() { return cloudPermActive().aiDailyMax || 0; }
+function cloudReadingMax() { return cloudPermActive().readingMax || 0; }
+function cloudPermDesc() {
+  const p = cloudPermActive();
+  if (cloudPermIsFree(p)) return '未设置限制（不限制）';
+  const parts = [];
+  if (p.dailyNewMax) parts.push('每日新词 ≤ ' + p.dailyNewMax);
+  if (p.aiDailyMax) parts.push('AI 练 ≤ ' + p.aiDailyMax + ' 题/天');
+  if (p.readingMax) parts.push('阅读 ≤ ' + p.readingMax + ' 篇');
+  const off = CLOUD_FEATURES.filter((f) => p.features[f.key] === false).map((f) => f.name);
+  if (off.length) parts.push('关闭：' + off.join('、'));
+  return parts.join(' · ');
+}
+// 把权限上限套到设置上（返回是否发生了裁剪）
+function cloudApplyPermClamp(settings) {
+  if (!settings) return false;
+  const max = cloudDailyNewMax();
+  if (max > 0 && Number(settings.dailyNew) > max) { settings.dailyNew = max; return true; }
+  return false;
 }
 
 
@@ -5118,6 +6036,263 @@ function renderGrammarDetail(view, APP, ctx) {
 }
 
 
+/* ============================================================================
+   家长端页面（绑定孩子 · 查看学习情况）
+   ---------------------------------------------------------------------------
+   · 入口：顶栏「更多」菜单 → 家长中心（data-page="parent"）
+   · 绑定方式（cloud.js cloudBindChild 支持两种）：
+       ① 本机账号：孩子账号就在这台设备上 → 直接读其本地进度（实时）
+       ② 同步码：孩子在自己设备上生成 HV1: 开头的紧凑快照，家长粘贴即绑定
+     server 驱动下走 /api/parent/*，看到的是孩子账号的实时云端进度。
+   · 展示：今日进度条 / 星数 / 掌握 / 错词 / 连续打卡 / 近 7 天迷你曲线 / 薄弱词。
+   依赖 cloud.js 的同名函数（同一 IIFE 作用域）。IIFE 包裹避免命名冲突。
+   ============================================================================ */
+const __mod_parent = (function () {
+  const esc = escapeHtml;
+
+  function relTime(ts) {
+    const t = Number(ts) || 0;
+    if (!t) return '—';
+    const d = Date.now() - t;
+    if (d < 60000) return '刚刚';
+    if (d < 3600000) return Math.floor(d / 60000) + ' 分钟前';
+    if (d < 86400000) return Math.floor(d / 3600000) + ' 小时前';
+    return Math.floor(d / 86400000) + ' 天前';
+  }
+  function head(sub) {
+    return '<div class="page-head">'
+      + '<button class="back-btn" id="backBtn" title="返回">'
+      + '<svg class="vico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
+      + '</button>'
+      + '<div class="ph-main"><div class="ph-title">家长中心</div>'
+      + '<div class="ph-sub">' + esc(sub) + '</div></div></div>';
+  }
+  function goHome() { window.dispatchEvent(new CustomEvent('goto', { detail: 'overview' })); }
+
+  function render({ view, APP, ctx }) {
+    const c = ctx;
+    let bindMode = 'account'; // account | code
+
+    view.innerHTML = head(cloudMode() === 'server' ? '服务端模式 · 实时学习数据' : '本机模式 · 同机/同步码')
+      + '<div id="parentBody"><div class="card" style="text-align:center;padding:24px;opacity:.7">加载中…</div></div>';
+    const back = view.querySelector('#backBtn');
+    if (back) back.onclick = goHome;
+    refresh();
+
+    function refresh() {
+      const body = view.querySelector('#parentBody');
+      if (!body) return;
+      body.innerHTML = '<div class="card" style="text-align:center;padding:20px;opacity:.7">加载中…</div>';
+      Promise.all([cloudChildren(), cloudMe()]).then(function (res) {
+        const list = res[0];
+        const me = res[1] || {};
+        draw(body, Array.isArray(list) ? list : [], list && list.error, me);
+      }).catch(function () {
+        body.innerHTML = '<div class="card">加载失败，请稍后重试。</div>';
+      });
+    }
+
+    function draw(body, kids, err, me) {
+      let html = '';
+      if (err) html += '<div class="card" style="color:var(--warn)">' + esc(err) + '</div>';
+
+      // 我的绑定码 / 同步码
+      html += '<div class="card">'
+        + '<div class="set-title">' + IC.userPlus + ' 绑定新孩子</div>'
+        + '<div class="bind-box">'
+        + '<div class="bind-tabs">'
+        + '<button class="' + (bindMode === 'account' ? 'on' : '') + '" data-mode="account">本机账号</button>'
+        + '<button class="' + (bindMode === 'code' ? 'on' : '') + '" data-mode="code">同步码</button>'
+        + '</div>';
+      if (bindMode === 'account') {
+        html += '<p class="hint" style="margin:0 0 6px">孩子的账号已在本机登录过 → 直接输入账号名绑定，看到的是实时进度。</p>'
+          + '<input id="bindInput" class="num-input" placeholder="孩子的账号名" style="width:100%" />';
+      } else {
+        html += '<p class="hint" style="margin:0 0 6px">孩子在自己设备上打开「家长中心 → 生成我的同步码」，把得到的码整段粘贴到这里。</p>'
+          + '<input id="bindInput" class="num-input" placeholder="HV1: 开头的同步码" style="width:100%" />';
+      }
+      html += '<div id="bindMsg" class="hint" style="color:var(--warn);min-height:16px;margin:4px 0 0"></div>'
+        + '<button class="btn block mt" id="bindBtn">绑定孩子</button>'
+        + '</div></div>';
+
+      // 我的同步码（给在“孩子设备”上的本人用）
+      html += '<div class="card">'
+        + '<div class="set-title">' + IC.shield + ' 生成我的同步码</div>'
+        + '<p class="hint" style="margin:0 0 8px">若你正用孩子的设备，点下方按钮生成一段码，交给家长在「同步码」里绑定，即可看到当前学习情况（离线可用）。</p>'
+        + '<div id="myCodeBox" class="code-box" style="display:none"></div>'
+        + '<div class="row mt" style="gap:8px">'
+        + '<button class="btn sm soft" id="genCode" style="flex:1">生成同步码</button>'
+        + '<button class="btn sm gray" id="copyCode" style="flex:1;display:none">复制</button>'
+        + '</div></div>';
+
+      // 孩子列表
+      html += '<div class="section-title mt" style="font-size:14px">'+IC.users+' 我的孩子（' + kids.length + '）</div>';
+      if (!kids.length) {
+        html += '<div class="card" style="text-align:center;opacity:.7;padding:20px">还没有绑定孩子<br/><span style="font-size:12px">用上方「本机账号」或「同步码」添加</span></div>';
+      } else {
+        kids.forEach(function (k, i) { html += kidCard(k, i); });
+      }
+
+      // 自己的会员信息（家长绑定态）
+      const roleTxt = (me.role === 'parent' || me.role === 'admin') ? (CLOUD_ROLE_NAME[me.role] || me.role) : '未绑定';
+      html += '<p class="hint mt" style="text-align:center">当前账号：' + esc(cloudSelfLabel()) + ' · 角色：' + esc(roleTxt) + '</p>';
+
+      body.innerHTML = html;
+
+      // 绑定 tab 切换
+      body.querySelectorAll('.bind-tabs button').forEach(function (b) {
+        b.onclick = function () { bindMode = b.dataset.mode; refresh(); };
+      });
+      const bindBtn = body.querySelector('#bindBtn');
+      if (bindBtn) bindBtn.onclick = function () {
+        const inp = body.querySelector('#bindInput');
+        const msg = body.querySelector('#bindMsg');
+        const v = (inp.value || '').trim();
+        if (!v) { msg.textContent = bindMode === 'account' ? '请输入账号名' : '请粘贴同步码'; return; }
+        bindBtn.disabled = true;
+        const payload = bindMode === 'account' ? { id: v } : { code: v };
+        cloudBindChild(payload).then(function (r) {
+          if (r && r.ok) { c.toast('绑定成功'); refresh(); }
+          else { msg.textContent = (r && r.msg) || '绑定失败'; bindBtn.disabled = false; }
+        }).catch(function () { msg.textContent = '绑定失败，请重试'; bindBtn.disabled = false; });
+      };
+
+      // 生成 / 复制同步码
+      const genBtn = body.querySelector('#genCode');
+      const copyBtn = body.querySelector('#copyCode');
+      if (genBtn) genBtn.onclick = function () {
+        let code = '';
+        try { code = cloudMakeSnapshot(); } catch (e) { code = ''; }
+        if (!code) { c.toast('生成失败'); return; }
+        const box = body.querySelector('#myCodeBox');
+        box.textContent = code;
+        box.style.display = 'block';
+        copyBtn.style.display = 'block';
+        c.toast('已生成，请复制给家长');
+      };
+      if (copyBtn) copyBtn.onclick = function () {
+        const code = body.querySelector('#myCodeBox').textContent || '';
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(function () { c.toast('已复制'); }, function () { fallbackCopy(code, c); });
+          } else { fallbackCopy(code, c); }
+        } catch (e) { fallbackCopy(code, c); }
+      };
+
+      // 孩子卡片事件
+      body.querySelectorAll('.kid-card').forEach(function (card) {
+        const id = card.dataset.id;
+        const kid = kids.filter(function (x) { return x.id === id; })[0];
+        const kd = card.querySelector('.kid-detail');
+        const tg = card.querySelector('#toggle' + cssId(id));
+        if (tg) tg.onclick = function () { kd.style.display = kd.style.display === 'none' ? 'block' : 'none'; };
+        const pb = card.querySelector('#plan' + cssId(id));
+        if (pb) pb.onclick = function () { askPlan(kid.summary ? kid.summary.plan : 0, function (v) { setPlan(id, v); }); };
+        const ub = card.querySelector('#unbind' + cssId(id));
+        if (ub) ub.onclick = function () { askConfirm('解除与「' + id + '」的绑定？', function () { unbind(id); }); };
+        const rb = card.querySelector('#reload' + cssId(id));
+        if (rb) rb.onclick = function () { refresh(); };
+      });
+    }
+
+    function fallbackCopy(code, c) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        c.toast('已复制');
+      } catch (e) { c.toast('复制失败，请手动选择复制'); }
+    }
+
+    function cssId(id) { return String(id).replace(/[^A-Za-z0-9_]/g, '_'); }
+
+    function kidCard(kid, idx) {
+      const s = kid.summary;
+      const cid = cssId(kid.id);
+      const live = kid.live;
+      const src = (s && s.source === 'code') ? ('同步码 · ' + relTime(s.at)) : (live ? '实时' : '暂无数据');
+      let inner;
+      if (!s) {
+        inner = '<div class="hint">暂无学习数据。' + (live ? '' : '孩子的设备需生成同步码后再绑定。') + '</div>';
+      } else {
+        const pct = s.percent || 0;
+        inner = '<div class="kid-prog">'
+          + '<div class="kp-line"><span>今日进度</span><span><b>' + s.todayDone + '</b> / ' + (s.plan || '—') + ' 词（' + pct + '%）</span></div>'
+          + '<div class="bar"><i style="width:' + pct + '%"></i></div>'
+          + '</div>'
+          + '<div class="stat-grid three" style="margin-top:10px">'
+          + '<div class="stat-box"><b>' + s.mastered + '</b><span>已掌握</span></div>'
+          + '<div class="stat-box"><b>' + s.stars + '</b><span>获得星</span></div>'
+          + '<div class="stat-box"><b>' + s.streak + '</b><span>连续打卡</span></div>'
+          + '</div>'
+          + cloudWeekSVG(s.week)
+          + '<div class="kid-detail" style="display:none">'
+          + '<div class="kd-row"><span>今日答对 / 答错</span><b>' + s.todayCorrect + ' / ' + s.todayWrong + '</b></div>'
+          + '<div class="kd-row"><span>已学过 / 生词本</span><b>' + s.learned + ' / ' + s.notebook + '</b></div>'
+          + '<div class="kd-row"><span>错词本</span><b>' + s.wrongBook + '</b></div>'
+          + (s.weak && s.weak.length
+            ? '<div class="kd-row" style="display:block"><span>薄弱词（错误次数）</span>'
+            + '<div class="tag-list">' + s.weak.map(function (w) { return '<span class="tag">' + esc(w.w) + ' ×' + w.n + '</span>'; }).join('') + '</div></div>'
+            : '<div class="kd-row"><span>薄弱词</span><b>暂无明显薄弱词 🎉</b></div>')
+          + '</div>';
+      }
+      return '<div class="kid-card" data-id="' + esc(kid.id) + '">'
+        + '<div class="kid-head">'
+        + '<div class="mem-ava">' + esc(String(kid.id).charAt(0).toUpperCase() || '?') + '</div>'
+        + '<div class="kid-name">' + esc(kid.name || kid.id) + '</div>'
+        + '<span class="pill ' + (live ? 'parent' : 'free') + '">' + esc(src) + '</span>'
+        + '</div>'
+        + inner
+        + '<div class="kid-acts">'
+        + '<button class="btn sm soft" id="toggle' + cid + '">展开详情</button>'
+        + '<button class="btn sm gray" id="plan' + cid + '">设每日目标</button>'
+        + '<button class="btn sm gray" id="reload' + cid + '">刷新</button>'
+        + '<button class="btn sm gray" id="unbind' + cid + '">解绑</button>'
+        + '</div></div>';
+    }
+
+    /* ---------- 动作 ---------- */
+    function setPlan(id, v) {
+      cloudSetChildPlan(id, v).then(function (r) {
+        if (r && r.ok === false) { c.toast(r.msg || '设置失败'); return; }
+        c.toast('已把「' + id + '」的每日目标设为 ' + v + ' 词');
+        refresh();
+      }).catch(function () { c.toast('设置失败'); });
+    }
+    function unbind(id) {
+      cloudUnbindChild(id).then(function (r) {
+        if (r && r.ok === false) { c.toast(r.msg || '解绑失败'); return; }
+        c.toast('已解绑「' + id + '」');
+        refresh();
+      }).catch(function () { c.toast('解绑失败'); });
+    }
+
+    /* ---------- 小弹窗 ---------- */
+    function askPlan(cur, cb) {
+      const m = c.openModal('<h3 style="margin:0 0 10px">设置每日新词目标</h3>'
+        + '<input id="planInp" class="num-input" type="number" min="0" max="9999" value="' + (Number(cur) || 0) + '" style="width:100%" />'
+        + '<p class="hint" style="margin:6px 0 0">0 = 不设目标（按孩子自己的设置）</p>'
+        + '<div class="row mt"><button class="btn block" id="planOk">确定</button></div>', { center: true });
+      m.querySelector('#planOk').onclick = function () {
+        const v = Math.max(0, Math.round(Number(m.querySelector('#planInp').value) || 0));
+        c.closeModal();
+        cb(v);
+      };
+    }
+    function askConfirm(text, cb) {
+      const m = c.openModal('<h3 style="margin:0 0 10px">请确认</h3><p style="margin:0 0 14px">' + esc(text) + '</p>'
+        + '<div class="row"><button class="btn block gray" id="cfNo">取消</button><button class="btn block" id="cfYes">确定</button></div>', { center: true });
+      m.querySelector('#cfNo').onclick = function () { c.closeModal(); };
+      m.querySelector('#cfYes').onclick = function () { c.closeModal(); cb(); };
+    }
+  }
+
+  return { render: render };
+})();
+
+
 
 // 单词应用练习：复用「单词练」题库与 FSRS6 评分管线
 
@@ -6740,16 +7915,20 @@ const __mod_wrongbook = {
 
 
 
+
+
 const Phonics = window.PhonicsCore;
 const APP = {
   library: { words: [], readings: [], updatedAt: 0 },
   progress: null,
   settings: null,
   page: 'overview',
-  modules: { overview: __mod_overview, category: __mod_category, reading: __mod_reading, notebook: __mod_notebook, wrongbook: __mod_wrongbook, import: __mod_import, stats: __mod_stats, dictation: __mod_dictation, listening: __mod_listening, wordji: __mod_wordji, aiall: __mod_aiall, aigrammar: __mod_aigrammar, aiword: __mod_aiword, aiwrong: __mod_aiwrong },
+  modules: { overview: __mod_overview, category: __mod_category, reading: __mod_reading, notebook: __mod_notebook, wrongbook: __mod_wrongbook, import: __mod_import, stats: __mod_stats, dictation: __mod_dictation, listening: __mod_listening, wordji: __mod_wordji, aiall: __mod_aiall, aigrammar: __mod_aigrammar, aiword: __mod_aiword, aiwrong: __mod_aiwrong, admin: __mod_admin, parent: __mod_parent },
   phraseSupplement: {}, // 阅读选词补充识别库（短语/合成词，持久化于 localStorage）
   clientId: 'default',
   user: null, // 已登录用户 {id}；null 表示匿名（进度归入 default 桶）
+  member: null, // 当前账号的会员信息 {id, role, level, perm, children...}（由 cloud.js 刷新）
+  hasBackend: false, // 是否有 Node 后端（server 驱动）
   listening: { papers: {}, index: [] }, // 听力题库：运行时由 listening.js 通过 /api/listening 加载
 };
 
@@ -7500,6 +8679,8 @@ async function openSettings(onClose) {
   const s = APP.settings || defaultSettings();
   const cur = s.difficulty || 'all';
   const mode = s.diffMode || 'le';
+  // 会员权限：每日新词上限（0 = 不限），用于输入框上限与保存时裁剪
+  const dailyNewMax = (typeof cloudDailyNewMax === 'function') ? cloudDailyNewMax() : 0;
   const levels = [['all', '全部（不限难度）']].concat([1, 2, 3, 4, 5, 6, 7].map((lv) => [lv, DIFF_LABELS[lv]]));
   const opts = levels.map(([lv, label]) => {
     const checked = String(cur) === String(lv) ? 'checked' : '';
@@ -7548,13 +8729,14 @@ async function openSettings(onClose) {
     <div class="set-group">
       <div class="set-title">③ 每日新词数量</div>
       <div class="num-row">
-        <input type="number" id="setDailyNew" class="num-input" min="10" max="9999" step="10" value="${Number(s.dailyNew) || 500}">
+        <input type="number" id="setDailyNew" class="num-input" min="10" max="${dailyNewMax > 0 ? Math.max(10, dailyNewMax) : 9999}" step="10" value="${Number(s.dailyNew) || 500}">
         <span class="num-unit">词 / 天</span>
       </div>
       <div class="num-presets">
         ${[50, 100, 200, 300, 500].map((n) => `<button class="chip" data-n="${n}" type="button">${n}</button>`).join('')}
       </div>
       <p class="hint">每天学习新单词的数量目标，概览与顶部的「今日任务」进度按此计算。</p>
+      ${dailyNewMax > 0 ? `<p class="hint" style="color:var(--warn)">会员权限限制：每日新词上限 ${dailyNewMax} 词。</p>` : ''}
     </div>
 
     <div class="set-group">
@@ -7840,12 +9022,14 @@ async function openSettings(onClose) {
       APP.settings.ttsSource = selTts;
       try { localStorage.removeItem(TTS_PREF_KEY); } catch (e) { /* 换音源后清掉旧记忆，按新设置重新选路 */ }
     }
+    // 会员权限：每日新词按上限裁剪（0 = 不限）
+    const clamped = (typeof cloudApplyPermClamp === 'function') ? cloudApplyPermClamp(APP.settings) : false;
     saveSettings();
     closeModal();
     if (typeof onClose === 'function') onClose();
     const diffTxt = APP.settings.difficulty === 'all' ? '全部' : (DIFF_LABELS[APP.settings.difficulty] + (selMode === 'le' ? '及以下' : ''));
     const modeTxt = selLearnMode === 'books' ? '选词书学习（' + APP.settings.selectedBooks.length + ' 本）' : '按难度学习（' + diffTxt + '）';
-    toast('已保存设置：' + modeTxt + ' · 新词 ' + APP.settings.dailyNew + ' · 总量 ' + APP.settings.dailyTotal + (algoChanged ? ' · 算法已切换为' + ALGOS[APP.settings.reviewAlgo].name : ''));
+    toast('已保存设置：' + modeTxt + ' · 新词 ' + APP.settings.dailyNew + ' · 总量 ' + APP.settings.dailyTotal + (clamped ? ' · 已按会员权限限制为 ' + APP.settings.dailyNew + ' 词' : '') + (algoChanged ? ' · 算法已切换为' + ALGOS[APP.settings.reviewAlgo].name : ''));
     // 重新合并选中的词书并刷新当前页
     loadSelectedBooks(APP).then(() => {
       if (typeof invalidateWordMap === 'function') invalidateWordMap();
@@ -8735,6 +9919,12 @@ function refreshHeader() {
       badge.className = 'diff-badge active';
     }
   }
+  // 顶栏「更多」菜单：后台管理入口（本机模式常显；服务端仅管理员可见）；家长中心始终可用
+  const mAdmin = document.getElementById('menuAdmin');
+  if (mAdmin) {
+    const vis = (typeof cloudAdminEntryVisible === 'function') ? cloudAdminEntryVisible() : true;
+    mAdmin.hidden = !vis;
+  }
 }
 
 /* ---------- 词库加载失败：显示重试，而非无限转圈 ---------- */
@@ -8922,6 +10112,10 @@ async function reloadProgressForUser() {
   buildFormIndex();
   buildEffectiveDifficulty();
   ensureDaily();
+  // 同步会员信息（等级/角色/权限）：登录后即刷新，供权限拦截与后台入口显隐使用
+  if (typeof cloudRefreshSelf === 'function') {
+    try { await cloudRefreshSelf(); } catch (e) { /* 会员信息拉取失败不阻塞进度加载 */ }
+  }
   if (_appReady) {
     goto(APP.page || 'overview');
     refreshHeader();
@@ -9076,6 +10270,14 @@ function _renderPage(page) {
 }
 
 function goto(page) {
+  // 会员权限拦截：管理员在后台关闭的功能模块不可进入（未配置 = 不限制，保持产品原有行为）
+  if (typeof CLOUD_PAGE_FEATURE !== 'undefined' && CLOUD_PAGE_FEATURE[page]
+      && typeof cloudPermAllows === 'function' && !cloudPermAllows(page)) {
+    const fk = CLOUD_PAGE_FEATURE[page];
+    const ft = (typeof CLOUD_FEATURES !== 'undefined') ? CLOUD_FEATURES.filter((f) => f.key === fk)[0] : null;
+    toast('当前账号未开通「' + (ft ? ft.name : page) + '」，请联系管理员开通');
+    return;
+  }
   APP.page = page;
   // 离开当前页：先停快筛听写的播报计时/自动跳转，再暂停所有音频
   if (window.__hvDictStop) { try { window.__hvDictStop(); } catch (e) { /* ignore */ } window.__hvDictStop = null; }
@@ -9151,7 +10353,11 @@ function init() {
     if (!APP.settings.initialized) runOnboarding();
   }
   // ② 后台同步（登录态 / 云端进度 / 词书）—— 完成后再刷新一次界面
-  syncFromServer().then(() => {
+  syncFromServer().then(async () => {
+    // 会员信息（等级/角色/权限）随登录态同步，供权限拦截与后台入口显隐
+    if (typeof cloudRefreshSelf === 'function') {
+      try { await cloudRefreshSelf(); } catch (e) { /* 忽略 */ }
+    }
     updateAuthUI();
     refreshHeader();
     if (_libFailed && APP.library.words && APP.library.words.length) _libFailed = false;
