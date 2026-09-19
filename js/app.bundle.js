@@ -1650,6 +1650,12 @@ function runWordQuiz(ctx, view, words, title, opts = {}) {
  * 引擎只负责出题、判分、导航与翻倍星数。
  */
 
+// runApplyForWords 复用本模块的 runAiQuiz 与「单词练」题库（WORD_URL），
+// 把答完的单词写入 FSRS6 档与错题练（recordFsrs6 / aiRecordWrong）。
+// 编译期 import 会被 build_bundle 剥离，运行时靠单 IIFE 同作用域解析这些名称。
+
+
+
 function aiEnsureDaily() {
   const p = window.APP.progress;
   const t = (window.APP && window.APP.settings) ? null : null;
@@ -1848,6 +1854,81 @@ function aiBumpToday(store) {
   const dk = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
   if (!store.today || store.today.date !== dk) store.today = { date: dk, count: 0, correct: 0, wrong: 0 };
   store.today.count = (store.today.count || 0) + 1;
+}
+
+/**
+ * 单词应用练习（通用版）：给定一组「词对象 / 单词字符串」，从「单词练」题库
+ * （WORD_URL）中筛出对应题目，复用 runAiQuiz 选择题引擎 + FSRS6 评分管线。
+ * 阅读记「单词应用」与错词本「单词应用」共用此函数，避免逻辑复刻。
+ *
+ * opts:
+ *   title      练习标题（如「错词本 · 单词应用」）
+ *   backPage   完成后返回跳转的页面（默认 aiall）
+ *   emptyMsg   无对应题目时的提示（默认通用文案）
+ *   onAnswer   额外回调（it, correct, rating）；基础 FSRS6 + 错题练记录始终执行
+ */
+function runApplyForWords(ctx, view, words, opts = {}) {
+  const keys = new Set(words.map((w) => String(w.word != null ? w.word : w).toLowerCase()));
+  const title = opts.title || '单词应用';
+  const backPage = opts.backPage || 'aiall';
+  const emptyMsg = opts.emptyMsg
+    || '这些单词暂无对应的「单词练」题目。<br/>可先到 <b>AI 练 → 单词练</b> 模块练习这些词汇。';
+  const extraOnAnswer = typeof opts.onAnswer === 'function' ? opts.onAnswer : () => {};
+
+  const backToMenu = () => window.dispatchEvent(new CustomEvent('goto', { detail: backPage }));
+
+  const showEmpty = () => {
+    view.innerHTML = '<div class="card" style="text-align:center">' + emptyMsg
+      + '<br/><button class="btn block mt" id="aiBack0">返回</button></div>';
+    view.querySelector('#aiBack0').onclick = backToMenu;
+  };
+
+  view.innerHTML = '<div class="card" style="text-align:center">' + IC.rotateSm + '正在加载单词应用题库…</div>';
+
+  const start = (data) => {
+    const all = data.items || [];
+    const items = all.filter((it) => {
+      const wk = it.word && String(it.word).toLowerCase();
+      return wk && keys.has(wk);
+    });
+    if (!items.length) { showEmpty(); return; }
+    runAiQuiz(ctx, view, {
+      title: title,
+      backPage: backPage,
+      questions: items,
+      // 不显示左上角蓝色「单词：xxx」标签 —— 单词练题库里含「看中文选英文」的题，
+      // 直接把英文原词写在题头会暴露答案（题干本身已给出足够信息）。
+      label: () => '',
+      shouldSkip: () => false,
+      preOf: (it) => (it.pre && it.pre !== '无') ? all.filter((x) => x.kp === it.pre) : null,
+      relatedOf: (it) => all.filter((x) => x.kp === it.kp && x.id !== it.id),
+      rateFsrs: true,
+      onAnswer: (it, correct, rating) => {
+        const wk = (it.word && String(it.word).toLowerCase()) || ('kp:' + it.kp);
+        const p = (window.APP && window.APP.progress) || {};
+        const ai = p.aiWord || (p.aiWord = { today: {}, total: 0, wrong: 0, trained: {}, wrongWords: [] });
+        aiBumpToday(ai);
+        ai.total = (ai.total || 0) + 1;
+        if (!correct) ai.wrong = (ai.wrong || 0) + 1;
+        ai.trained = ai.trained || {};
+        ai.trained[wk] = (ai.trained[wk] || 0) + 1;
+        if (!correct) {
+          ai.wrongWords = ai.wrongWords || [];
+          if (!ai.wrongWords.map((w) => String(w).toLowerCase()).includes(wk)) ai.wrongWords.push(wk);
+          aiRecordWrong(it, 'word');
+        }
+        const res = recordFsrs6(wk, rating);
+        if (res && res.mastered) ctx.toast('🎉 ' + (it.word || wk) + ' 已判掌握！+10星');
+        extraOnAnswer(it, correct, rating);
+      },
+    });
+  };
+
+  safeFetch(WORD_URL).then((r) => r.json()).then(start).catch((e) => {
+    view.innerHTML = '<div class="card" style="text-align:center">题库加载失败：' + esc(e.message || e)
+      + '<br/><button class="btn block mt" id="aiBack0">返回</button></div>';
+    view.querySelector('#aiBack0').onclick = backToMenu;
+  });
 }
 
 
@@ -6303,9 +6384,7 @@ const __mod_parent = (function () {
 
 
 
-// 单词应用练习：复用「单词练」题库与 FSRS6 评分管线
-
-
+// 单词应用练习：复用 aipractice.js 的 runApplyForWords（通用版，错词本同源）
 
 // 阅读列表的「级别选择」状态（小学 / 初中 / 高中 / 拓展故事）：模块级变量 + localStorage，
 // 这样从文章「返回」列表、或下次再进阅读记，都停在上次选的级别上。
@@ -7304,7 +7383,7 @@ function renderCloze(view, ctx, reading, setMode) {
 
 /**
  * 单词应用练习：把本文高亮词映射到「单词练」题库中对应的题目，复用通用选择题引擎与 FSRS6 评分。
- * 与「单词练」模块同源（WORD_URL），答完后写入该单词 FSRS6 档与错题练，互相关联。
+ * 逻辑收敛到 aipractice.js 的 runApplyForWords（错词本同源）。
  */
 function renderApply(view, ctx, reading, setMode) {
   const words = highlightWordObjects(reading, ctx);
@@ -7313,50 +7392,10 @@ function renderApply(view, ctx, reading, setMode) {
     bindModeButtons(view, setMode);
     return;
   }
-  const keys = new Set(words.map((w) => String(w.word).toLowerCase()));
-  view.innerHTML = '<div class="card" style="text-align:center">' + IC.rotateSm + '正在加载单词应用题库…</div>';
-  safeFetch(WORD_URL).then((r) => r.json()).then((data) => {
-    const items = (data.items || []).filter((it) => {
-      const wk = it.word && String(it.word).toLowerCase();
-      return wk && keys.has(wk);
-    });
-    if (!items.length) {
-      view.innerHTML = '<div class="card" style="text-align:center">本文高亮词暂无对应的「单词练」题目。<br/>可先到 <b>AI 练 → 单词练</b> 模块练习这些词汇。</div>';
-      bindModeButtons(view, setMode);
-      return;
-    }
-    runAiQuiz(ctx, view, {
-      title: '单词应用 · ' + (splitReadingTitle(reading).en || '阅读记'),
-      backPage: 'reading',
-      questions: items,
-      // 不显示左上角蓝色「单词：xxx」标签 —— 单词练题库里含「看中文选英文」的题，
-      // 直接把英文原词写在题头会暴露答案（题干本身已给出足够信息）。
-      label: () => '',
-      shouldSkip: () => false,
-      preOf: (it) => (it.pre && it.pre !== '无') ? (data.items || []).filter((x) => x.kp === it.pre) : null,
-      relatedOf: (it) => (data.items || []).filter((x) => x.kp === it.kp && x.id !== it.id),
-      rateFsrs: true,
-      onAnswer: (it, correct, rating) => {
-        const wk = (it.word && String(it.word).toLowerCase()) || ('kp:' + it.kp);
-        const p = (window.APP && window.APP.progress) || {};
-        const ai = p.aiWord || (p.aiWord = { today: {}, total: 0, wrong: 0, trained: {}, wrongWords: [] });
-        aiBumpToday(ai);
-        ai.total = (ai.total || 0) + 1;
-        if (!correct) ai.wrong = (ai.wrong || 0) + 1;
-        ai.trained = ai.trained || {};
-        ai.trained[wk] = (ai.trained[wk] || 0) + 1;
-        if (!correct) {
-          ai.wrongWords = ai.wrongWords || [];
-          if (!ai.wrongWords.map((w) => String(w).toLowerCase()).includes(wk)) ai.wrongWords.push(wk);
-          aiRecordWrong(it, 'word');
-        }
-        const res = recordFsrs6(wk, rating);
-        if (res && res.mastered) ctx.toast('🎉 ' + (it.word || wk) + ' 已判掌握！+10星');
-      },
-    });
-  }).catch((e) => {
-    view.innerHTML = '<div class="card" style="text-align:center">题库加载失败：' + escapeHtml(e.message || e) + '</div>';
-    bindModeButtons(view, setMode);
+  runApplyForWords(ctx, view, words, {
+    title: '单词应用 · ' + (splitReadingTitle(reading).en || '阅读记'),
+    backPage: 'reading',
+    emptyMsg: '本文高亮词暂无对应的「单词练」题目。<br/>可先到 <b>AI 练 → 单词练</b> 模块练习这些词汇。',
   });
 }
 
@@ -7826,6 +7865,7 @@ const __mod_wordji = {
 
 
 
+
 // 错词本：记录「做错的单词」（不是题目），与生词本同样的列表样式：单词 + 音标 + 常用释义。
 // 收录的词不可手动点叉删除；「何时推荐、何时移出」由系统设置里的复习算法决定：
 //   - 3 次错误移除：全量推荐（每天每词只刷一轮），三项练习连续 3 轮全对移出
@@ -7839,7 +7879,7 @@ const __mod_wrongbook = {
   render({ view, APP, ctx }) {
     // 核心词库（含 meaning/phonetic）分层懒加载：到货后若用户已交互（_viewTouched），
     // goto 的自动重渲染被门控跳过，这里主动自刷新根屏，补全错词列表的释义/音标。
-    ctx.onLibReady(() => { if (APP.page === 'wrongbook' && ctx.viewTouched() && ctx.refreshSelf) ctx.refreshSelf(); });
+    ctx.onLibReady(() => { if (APP.page === 'wrongbook' && ctx.viewTouched() && document.getElementById('list') && ctx.refreshSelf) ctx.refreshSelf(); });
     draw();
     function draw() {
       const p = APP.progress;
@@ -7883,6 +7923,8 @@ const __mod_wrongbook = {
         <div class="section-title">${IC.bookX}错词本 · ${words.length} 词</div>
         <div class="hint" style="margin:-4px 0 10px">${hint}</div>
         <button class="btn block soft" id="study">${IC.targetSm}${isW3 ? '专项重练错词本（今天可练 ' + queue.length + ' 词）' : '随时复习错词本（' + queue.length + ' 词）'}</button>
+        <button class="btn block soft mt" id="studyApply">${IC.puzzle}单词应用练习（练「单词练」题库 · 在线）</button>
+        <div class="hint" style="margin:6px 0 0">「单词应用」用 AI 单词练题库的应用题强化这些错词，答对按 FSRS6 记档、答错进入错题练。</div>
         <div id="list" class="nb-list mt"></div>
       `;
       const list = view.querySelector('#list');
@@ -7934,6 +7976,19 @@ const __mod_wrongbook = {
         studyBtn.innerHTML = IC.moonSm + (nextDue ? '暂无到期复习，下次 ' + describeDue(nextDue) : '今天额度已用完，明天再来');
       } else {
         studyBtn.onclick = () => runWordQuiz(ctx, view, queue, '错词本', { source: 'wrongbook' });
+      }
+      // 单词应用练习入口（复用「单词练」题库 + FSRS6，阅读记同源）
+      const studyApply = view.querySelector('#studyApply');
+      if (!queue.length) {
+        studyApply.disabled = true;
+        studyApply.classList.add('disabled');
+        studyApply.innerHTML = IC.bookX + '暂无可练习的错词';
+      } else {
+        studyApply.onclick = () => runApplyForWords(ctx, view, queue, {
+          title: '错词本 · 单词应用',
+          backPage: 'wrongbook',
+          emptyMsg: '这些错词暂无对应的「单词练」题目。<br/>可先到 <b>AI 练 → 单词练</b> 模块练习这些词汇。',
+        });
       }
     }
   },
