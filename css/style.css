@@ -221,6 +221,11 @@ body {
   width: 18px; height: 18px; display: inline-block; vertical-align: -.28em;
   margin-right: 5px; color: var(--primary); flex: none;
 }
+/* 「方形浅底图标块」内的图标必须清掉 .vico/.vico-sm 自带的右边距：
+   这类容器用 justify-content:center 居中的是「图标 + 右边距」整体，
+   多出来的 7px/5px 会让图标视觉上偏左约 3.5px（截图反馈的「图标偏左」根因）。
+   涉及：单词记卡片 .wj-ico、AI 练菜单 .ai-ico、日期选择按钮 .date-field-ic。 */
+.wj-ico svg, .ai-ico svg, .date-field-ic svg { margin-right: 0; }
 .tab.active {
   background: var(--card); color: var(--primary);
   box-shadow: 0 2px 8px rgba(40, 60, 110, .10);
@@ -233,9 +238,15 @@ body {
 .section-title { font-size: 15px; font-weight: 700; margin: 16px 2px 8px; color: var(--text); }
 
 /* Buttons */
-.btn { border: none; border-radius: 12px; padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; transition: transform .08s, background .2s; background: var(--primary); color: #fff; }
+/* 按钮内图标与文字作为整体水平+垂直居中：图标用 flex 排布（去掉 vertical-align 的基线误差），
+   间距交给 gap，避免 .vico/.vico-sm 的 margin-right 把内容挤偏。 */
+.btn { border: none; border-radius: 12px; padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; transition: transform .08s, background .2s; background: var(--primary); color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 .btn:active { transform: scale(.97); }
 .btn.block { width: 100%; }
+/* 按钮内图标跟随按钮文字颜色。此前 .vico/.vico-sm 固定在 var(--primary)，
+   在主色按钮上就是「蓝底蓝图标」→ 图标完全不可见却仍占位，
+   导致「开始听写」等按钮的文字看起来没有居中（右侧偏移约 12px）。 */
+.btn .vico, .btn .vico-sm { color: inherit; margin-right: 0; }
 .btn.ghost { background: var(--block); color: var(--primary-d); }
 .btn.soft { background: linear-gradient(160deg, #ff9500, #f76707); color: #fff; }
 /* 橙色底按钮内的图标统一为白色线性图标 */
