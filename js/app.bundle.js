@@ -3920,7 +3920,7 @@ const __mod_dictation = {
       if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
     };
     const st = {
-      mode: 'diff',                                   // diff | sync
+      mode: 'diff',                                   // diff 难度听 | books 词书听 | sync 同步听
       diffLevel: (APP.settings && APP.settings.difficulty) || 'all',   // 1..7 | 'all'
       diffScope: 'le',                                // 'eq' 仅本级 | 'le' 本级及以下
       syncBand: '小学',                               // 小学 | 初中 | 高中
@@ -3939,6 +3939,27 @@ const __mod_dictation = {
     let streak = 0;     // 当前单词的连击数（必须先声明：ESM 为严格模式，未声明赋值会抛 ReferenceError）
 
     function stopAudio() { if (playTimer) { clearTimeout(playTimer); playTimer = null; } }
+
+    // 当前「设置 · 词书选择」中选中的词书 id 列表（词书听用）
+    function selectedBookIds() {
+      if (typeof getSelectedBooks === 'function') {
+        try { return getSelectedBooks(APP) || []; } catch (e) { /* 忽略，走下面的兜底 */ }
+      }
+      const s = APP.settings && APP.settings.selectedBooks;
+      return Array.isArray(s) ? s : [];
+    }
+
+    // 词书听范围判定：仅当单词带「已选词书」标签时命中。
+    // 注意与全局 matchBookScope 的差异：未选任何词书时这里返回 false（词书听无词可听），
+    // 而全局 matchBookScope 未选词书时返回 true（不过滤）。
+    function inBookScope(w) {
+      const sel = selectedBookIds();
+      if (!sel.length) return false;
+      const bs = w && w.books;
+      if (!Array.isArray(bs) || !bs.length) return false;
+      const s = new Set(sel);
+      return bs.some((b) => s.has(b));
+    }
 
     // 按 difficulty 过滤（独立于全局设置）；GRE 桶去重后的「有效难度」优先
     function matchDiff(w, lv, scope) {
@@ -3964,8 +3985,14 @@ const __mod_dictation = {
     function candidates(includeDictated) {
       let pool = (APP.library.words || []).filter((w) =>
         w.word && hvHasMeaning(w) && (st.allWords || !APP.progress.mastered[w.word.toLowerCase()]));
-      // 词书范围：选中词书后仅保留词书内单词（与难度取交集）
-      if (ctx && ctx.inScope) pool = pool.filter((w) => ctx.inScope(w));
+      // 范围过滤：
+      //   词书听 —— 强制按「已选词书」过滤（与全局学习路径 / 难度设置无关）
+      //   其余   —— 沿用全局 inScope，与「设置 · 学习路径」保持一致
+      if (st.mode === 'books') {
+        pool = pool.filter((w) => inBookScope(w));
+      } else if (ctx && ctx.inScope) {
+        pool = pool.filter((w) => ctx.inScope(w));
+      }
       // 防重复：排除当天已经听写过的单词（每个单词每天只听写一轮）
       if (!includeDictated) {
         const done = todayDictated(APP);
@@ -3973,7 +4000,9 @@ const __mod_dictation = {
       }
       if (st.mode === 'diff') {
         pool = pool.filter((w) => matchDiff(w, st.diffLevel, st.diffScope));
-      } else {
+      } else if (st.mode === 'sync') {
+        // 注意：必须是 else if —— 三模式（diff/books/sync）下若写成 else，
+        // 「词书听」会被套上 PEP 年级过滤，候选池几乎被清空（曾误剩 5 词）。
         pool = pool.filter((w) => {
           const p = w.pep;
           if (!p || p.band !== st.syncBand) return false;
@@ -4025,7 +4054,9 @@ const __mod_dictation = {
       const allFull = candidates(true);   // 包含当天已听写的（用于判断范围内是否还有词）
       const all = candidates(false);       // 排除当天已听写的
       if (!allFull.length) {
-        ctx.toast(st.mode === 'sync' ? '该年级/单元下没有可听写的单词' : '当前难度下没有可听写的单词');
+        ctx.toast(st.mode === 'books'
+          ? (selectedBookIds().length ? '已选词书内没有可听写的单词' : '还没有选择词书，请先到「设置 → 词书选择」勾选至少一本')
+          : st.mode === 'sync' ? '该年级/单元下没有可听写的单词' : '当前难度下没有可听写的单词');
         return;
       }
       if (!all.length) { renderAllDone(); return; }
@@ -4059,8 +4090,16 @@ const __mod_dictation = {
           <div class="field"><label>听写模式</label>
             <div class="seg">
               <button class="seg-btn ${st.mode === 'diff' ? 'on' : ''}" data-mode="diff">难度听</button>
+              <button class="seg-btn ${st.mode === 'books' ? 'on' : ''}" data-mode="books">词书听</button>
               <button class="seg-btn ${st.mode === 'sync' ? 'on' : ''}" data-mode="sync">同步听</button>
             </div>
+          </div>
+
+          <div id="booksBox" style="${st.mode === 'books' ? '' : 'display:none'}">
+            <div class="field"><label>词书范围</label>
+              <div class="hint" id="booksInfo">…</div>
+            </div>
+            <p class="hint" style="margin-top:-2px">词书听：只出「已选词书」内的单词（与难度设置无关）。未选择词书时请先到 <b>设置 → ② 词书选择</b> 勾选。</p>
           </div>
 
           <div id="diffBox" style="${st.mode === 'diff' ? '' : 'display:none'}">
@@ -4122,6 +4161,28 @@ const __mod_dictation = {
       if (allWordsChk) allWordsChk.onchange = () => { st.allWords = allWordsChk.checked; if (st.allWords) st.all = false; renderConfig(); };
       const bindNum = (id, key) => { const el = view.querySelector('#' + id); if (el) el.oninput = () => { st[key] = parseInt(el.value, 10) || st[key]; }; };
       bindNum('cnt', 'cnt'); bindNum('plays', 'plays'); bindNum('iv', 'interval');
+
+      // 词书听：展示已选词书清单；未选择词书时禁用「开始听写」并给出引导
+      const startBtn = view.querySelector('#start');
+      if (st.mode === 'books') {
+        const sel = selectedBookIds();
+        const infoEl = view.querySelector('#booksInfo');
+        if (!sel.length) {
+          if (infoEl) infoEl.innerHTML = '还没有选择词书。请先到 <b>设置 → ② 词书选择</b> 勾选至少一本词书，再回来听写。';
+          if (startBtn) { startBtn.disabled = true; startBtn.classList.add('disabled'); }
+        } else {
+          if (infoEl) infoEl.innerHTML = '已选 <b>' + sel.length + '</b> 本词书：<span id="booksNames">' + escapeHtml(sel.join('、')) + '</span>';
+          // 词书名称需异步取词书清单；取到后把 id 换成可读中文名（取不到就保留 id 展示）
+          if (typeof ensureBookIndex === 'function') {
+            ensureBookIndex().then((idx) => {
+              if (!idx || !Array.isArray(idx.books)) return;
+              const names = sel.map((id) => { const m = idx.books.find((b) => b.id === id); return (m && m.name) ? m.name : id; });
+              const box = view.querySelector('#booksNames');
+              if (box) box.textContent = names.join('、');
+            }).catch(() => { /* 词书清单不可用：保留 id 展示 */ });
+          }
+        }
+      }
 
       view.querySelector('#start').onclick = () => beginRound();
     }
@@ -4272,6 +4333,8 @@ const __mod_dictation = {
       window.dispatchEvent(new CustomEvent('dictation-complete'));
       const modeHint = st.mode === 'sync'
         ? '同步听：需连续拼对 3 次才判定掌握，错一次连击清零。'
+        : st.mode === 'books'
+        ? '词书听：只出「已选词书」内的单词，英文与中文一次全对即判定掌握。'
         : '难度听：英文与中文一次全对即判定掌握。';
       const wbCount = (APP.progress.wrongBook || []).filter((w) =>
         !(APP.progress.mastered && APP.progress.mastered[String(w).toLowerCase()])).length;
@@ -10016,16 +10079,25 @@ function refreshHeader() {
   const badge = document.getElementById('diffBadge');
   if (badge) {
     const s = APP.settings || {};
+    const loggedIn = !!(APP.user && APP.user.id);
     if (s.learnMode === 'books') {
-      const n = (s.selectedBooks && s.selectedBooks.length) || 0;
-      badge.textContent = '词书 ' + n;
-      badge.title = '当前学习模式：选词书学习（已选 ' + n + ' 本）';
-      badge.className = 'diff-badge active';
+      // 「词书选择」情况仅登录后展示：未登录时整个徽章不显示（登录/退出后 refreshHeader 会重算）。
+      if (!loggedIn) {
+        badge.style.display = 'none';
+      } else {
+        const n = (s.selectedBooks && s.selectedBooks.length) || 0;
+        badge.style.display = '';
+        badge.textContent = '词书 ' + n;
+        badge.title = '当前学习模式：选词书学习（已选 ' + n + ' 本）';
+        badge.className = 'diff-badge active';
+      }
     } else if (!s.difficulty || s.difficulty === 'all') {
+      badge.style.display = '';
       badge.textContent = '全部';
       badge.title = '当前难度范围：全部';
       badge.className = 'diff-badge all';
     } else {
+      badge.style.display = '';
       const arrow = s.diffMode === 'eq' ? '' : '↓';
       badge.textContent = DIFF_LABELS[s.difficulty] + arrow;
       badge.title = '当前难度范围：' + DIFF_LABELS[s.difficulty] + (s.diffMode === 'eq' ? '（仅本级）' : '及以下');
