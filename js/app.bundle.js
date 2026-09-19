@@ -2739,6 +2739,9 @@ const ORIGINAL_THEMES = new Set([
 
 const __mod_category = {
   render({ view, APP, ctx }) {
+    // 核心词库（含 category 等重字段）分层懒加载：到货后若用户已在本页交互（_viewTouched），
+    // goto 的自动重渲染被门控跳过，这里主动自刷新根屏，让「分类数据加载中」与各项待练数及时补全。
+    ctx.onLibReady(() => { if (APP.page === 'category' && ctx.viewTouched() && ctx.refreshSelf) ctx.refreshSelf(); });
     const words = (APP.library && APP.library.words) || [];
     const groups = {};
     words.forEach((w) => {
@@ -3879,7 +3882,7 @@ const __mod_dictation = {
     // includeDictated=true 时不排除「当天已听写」单词（用于判断范围内是否还有单词可听写）
     function candidates(includeDictated) {
       let pool = (APP.library.words || []).filter((w) =>
-        w.word && w.meaning && (st.allWords || !APP.progress.mastered[w.word.toLowerCase()]));
+        w.word && hvHasMeaning(w) && (st.allWords || !APP.progress.mastered[w.word.toLowerCase()]));
       // 词书范围：选中词书后仅保留词书内单词（与难度取交集）
       if (ctx && ctx.inScope) pool = pool.filter((w) => ctx.inScope(w));
       // 防重复：排除当天已经听写过的单词（每个单词每天只听写一轮）
@@ -5594,6 +5597,9 @@ function isMastered(word) {
 
 const __mod_notebook = {
   render({ view, APP, ctx }) {
+    // 核心词库（含 meaning/phonetic）分层懒加载：到货后若用户已交互（_viewTouched），
+    // goto 的自动重渲染被门控跳过，这里主动自刷新根屏，补全生词列表的释义/音标。
+    ctx.onLibReady(() => { if (APP.page === 'notebook' && ctx.viewTouched() && ctx.refreshSelf) ctx.refreshSelf(); });
     const p = APP.progress;
     const algo = currentAlgo();
     const meta = ALGOS[algo];
@@ -7419,6 +7425,9 @@ function growthSVG(series) {
 
 const __mod_stats = {
   render({ view, APP, ctx }) {
+    // 核心词库（含 category 等重字段）分层懒加载：到货后若用户已在本页交互（_viewTouched），
+    // goto 的自动重渲染被门控跳过，这里主动自刷新根屏，让分类覆盖/高频错词等及时补全。
+    ctx.onLibReady(() => { if (APP.page === 'stats' && ctx.viewTouched() && ctx.refreshSelf) ctx.refreshSelf(); });
     const p = APP.progress;
     const lib = APP.library;
     const total = lib.words.length;
@@ -7674,7 +7683,7 @@ function selectedUnmasteredWords(APP) {
   const mastered = APP.progress && APP.progress.mastered;
   const out = [];
   for (const w of (APP.library.words || [])) {
-    if (Array.isArray(w.books) && w.books.some((b) => sel.has(b)) && w.meaning) {
+    if (Array.isArray(w.books) && w.books.some((b) => sel.has(b)) && hvHasMeaning(w)) {
       if (!(mastered && mastered[String(w.word).toLowerCase()])) out.push(w);
     }
   }
@@ -7698,7 +7707,7 @@ function aiTaskWords(APP) {
   if (sel.length) {
     cands = selectedUnmasteredWords(APP);
   } else {
-    cands = (APP.library.words || []).filter((w) => w.meaning && !(APP.progress.mastered && APP.progress.mastered[String(w.word).toLowerCase()]));
+    cands = (APP.library.words || []).filter((w) => hvHasMeaning(w) && !(APP.progress.mastered && APP.progress.mastered[String(w.word).toLowerCase()]));
   }
   return assignQuota(queueFor(cands));
 }
@@ -7707,6 +7716,9 @@ const BACK_BTN = '<button class="btn ghost block" id="back"><svg class="vico-sm"
 
 const __mod_wordji = {
   render({ view, APP, ctx }) {
+    // 核心词库（含 meaning/phonetic）分层懒加载：到货后若用户已交互（_viewTouched），
+    // goto 的自动重渲染被门控跳过，这里主动自刷新根屏，补全 AI 任务词列表的释义/音标。
+    ctx.onLibReady(() => { if (APP.page === 'wordji' && ctx.viewTouched() && ctx.refreshSelf) ctx.refreshSelf(); });
     drawHub();
 
     function drawHub() {
@@ -7825,6 +7837,9 @@ function isMastered(word) {
 
 const __mod_wrongbook = {
   render({ view, APP, ctx }) {
+    // 核心词库（含 meaning/phonetic）分层懒加载：到货后若用户已交互（_viewTouched），
+    // goto 的自动重渲染被门控跳过，这里主动自刷新根屏，补全错词列表的释义/音标。
+    ctx.onLibReady(() => { if (APP.page === 'wrongbook' && ctx.viewTouched() && ctx.refreshSelf) ctx.refreshSelf(); });
     draw();
     function draw() {
       const p = APP.progress;
@@ -8128,10 +8143,20 @@ function ensureCore() { return loadLibLayer('__HV_CORE', 'lib-core.js', '_fullRe
 function ensureExtra() { return loadLibLayer('__HV_EXTRA', 'lib-extra.js', '_extraReady'); }
 // 兼容旧调用名：模块里的 ctx.ensureFull 一律指「核心重字段」
 const ensureFullLibrary = ensureCore;
+// 乐观判定「单词是否有释义」：首屏紧凑索引不含 meaning（分层懒加载），此时未知≠缺失 ——
+// 一律视为「有」，保证首屏即能正确统计词量（不再因 w.meaning 过滤而返回 0）。
+// 仅当字段明确存在且为空时才视为无；core 层到货后 meaning 会被就地补全，计数自然收敛。
+function hvHasMeaning(w) {
+  const m = w && w.meaning;
+  if (m == null) return true;            // 未知（索引期）→ 乐观保留
+  if (Array.isArray(m)) return m.length > 0;
+  return String(m).trim().length > 0;
+}
 
 // 渲染 / 补正 相关的实时状态
 let _pageGen = 0;        // 页面渲染代次：换页即 +1
 let _viewTouched = false; // 本页渲染后用户是否已交互（交互过就绝不自动重渲染，免得打断做题）
+let _libReadyCbs = [];    // 核心词库到货后要触发的根屏自刷新回调（每次 goto 换页清空）
 
 // 一进页面就依赖「核心重字段」的模块：缺字段时给细提示条，并在 core 到货后自动补正
 const CORE_PAGES = { dictation: 1, category: 1, stats: 1, notebook: 1, wrongbook: 1, wordji: 1 };
@@ -8829,6 +8854,15 @@ async function openSettings(onClose) {
   function renderBooks(idx) {
     if (!idx || !idx.groups) { bookPickerEl.innerHTML = '<div class="hint">词书清单暂不可用（请检查网络或部署）。</div>'; return; }
     const sel = new Set(getSelectedBooks(APP));
+    // 有效词量：按「当前词库实际覆盖」统计（而非 index.json 的源文件词数）。
+    // 工作词库经去重/合并，实际带某 book 标签的词数往往少于 index 的 count，
+    // 这里据此显示，与听写记「本范围词量」口径一致，避免「选了 X 词却只显示很少」的错觉。
+    const effCount = Object.create(null);
+    for (const w of (APP.library.words || [])) {
+      if (!Array.isArray(w.books)) continue;
+      for (const id of w.books) { if (id) effCount[id] = (effCount[id] || 0) + 1; }
+    }
+    const bkCnt = (b) => (effCount[b.id] != null ? effCount[b.id] : 0);
     // 分组按学习优先级排序；未列出的分组按名称补在末尾
     const fixedGroupOrder = ['中国考试', '青少年英语', '国际考试', '专业词汇', '代码练习'];
     // 青少年英语等按「版本」细分的组，版本内显示顺序
@@ -8848,7 +8882,7 @@ async function openSettings(onClose) {
     ];
     const grpHtml = orderedGroups.map((g) => {
       const books = groups[g];
-      const total = books.reduce((s, b) => s + b.count, 0);
+      const total = books.reduce((s, b) => s + bkCnt(b), 0);
       // 嵌套分组键：青少年英语用 version，中国考试/国际考试用 bookType
       const keyField = books[0] && books[0].version ? 'version' : (books[0] && books[0].bookType ? 'bookType' : null);
       const NEST_ORDER = keyField === 'version' ? VERSION_ORDER : TYPE_ORDER;
@@ -8866,9 +8900,9 @@ async function openSettings(onClose) {
             if (keyField === 'version') return (a.gradeOrder - b.gradeOrder) || a.name.localeCompare(b.name, 'zh');
             return (a.difficulty - b.difficulty) || a.name.localeCompare(b.name, 'zh');
           });
-          const ktotal = kb.reduce((s, b) => s + b.count, 0);
+          const ktotal = kb.reduce((s, b) => s + bkCnt(b), 0);
           const items = kb.map((b) =>
-            `<label class="book-opt"><input type="checkbox" class="bk" value="${b.id}" ${sel.has(b.id) ? 'checked' : ''}> ${escapeHtml(b.name)} <span class="bk-n">${b.count}</span></label>`
+            `<label class="book-opt"><input type="checkbox" class="bk" value="${b.id}" ${sel.has(b.id) ? 'checked' : ''}> ${escapeHtml(b.name)} <span class="bk-n">${bkCnt(b)}</span></label>`
           ).join('');
           return `<div class="book-sub">
             <div class="book-sub-h" data-v="${escapeHtml(k)}"><span>${escapeHtml(k)}</span><span class="bk-n">${kb.length} 本 · ${ktotal} 词 ▾</span></div>
@@ -8879,7 +8913,7 @@ async function openSettings(onClose) {
         // 一级：组内按难度(易→难)→名称排序
         const sb = books.slice().sort((a, b) => (a.difficulty - b.difficulty) || a.name.localeCompare(b.name, 'zh'));
         body = sb.map((b) =>
-          `<label class="book-opt"><input type="checkbox" class="bk" value="${b.id}" ${sel.has(b.id) ? 'checked' : ''}> ${escapeHtml(b.name)} <span class="bk-n">${b.count}</span></label>`
+          `<label class="book-opt"><input type="checkbox" class="bk" value="${b.id}" ${sel.has(b.id) ? 'checked' : ''}> ${escapeHtml(b.name)} <span class="bk-n">${bkCnt(b)}</span></label>`
         ).join('');
       }
       return `<div class="book-grp">
@@ -10267,7 +10301,15 @@ async function fetchJSON(url, timeoutMs) {
   }
 }
 function ctxObj() {
-  return { playUK, playUS, toast, openModal, closeModal, refreshHeader, completeRound, recordWrongAnswer, recordWrongQuestion, recordTask, recordReadTask, markMastered, toggleNotebook, findWord, saveProgress, completeSession, completeReadingSession, isMastered, inWrongBook, matchDifficulty, matchBookScope, inScope, difficultyOf, difficultyLevel, openSettings, showWordCard, todayStr, loadReadings, ensureFull: ensureFullLibrary, ensureExtra, fullReady: () => !!APP._fullReady, extraReady: () => !!APP._extraReady, viewTouched: () => _viewTouched, settings: APP.settings };
+  return { playUK, playUS, toast, openModal, closeModal, refreshHeader, completeRound, recordWrongAnswer, recordWrongQuestion, recordTask, recordReadTask, markMastered, toggleNotebook, findWord, saveProgress, completeSession, completeReadingSession, isMastered, inWrongBook, matchDifficulty, matchBookScope, inScope, difficultyOf, difficultyLevel, openSettings, showWordCard, todayStr, loadReadings, ensureFull: ensureFullLibrary, ensureExtra, fullReady: () => !!APP._fullReady, extraReady: () => !!APP._extraReady, viewTouched: () => _viewTouched, onLibReady: (cb) => { if (typeof cb === 'function') _libReadyCbs.push(cb); }, refreshSelf: () => { const pg = APP.page; if (APP.modules[pg] && APP.modules[pg].render) { _renderPage(pg); refreshHeader(); } }, settings: APP.settings };
+}
+
+// 核心词库到货后触发：各模块在 render 时通过 ctx.onLibReady 注册的「根屏自刷新」回调。
+// 关键：绕过 _viewTouched 门控 —— 用户点过页面后，goto 的自动重渲染会被跳过，
+// 导致提示条常驻、计数停留在 0；这里主动把根屏补全（模块自身已做安全判断）。
+function fireLibReady() {
+  const cbs = _libReadyCbs; _libReadyCbs = [];
+  for (const cb of cbs) { try { cb(); } catch (e) { console.warn('[libReady] 回调异常:', e); } }
 }
 
 // 只负责「把当前页画出来」。
@@ -10289,7 +10331,7 @@ function _renderPage(page) {
   }
   // 核心重字段还没到位：只加一条细提示（不是整页转圈），数据到货后本页会自动补正
   if (CORE_PAGES[page] && APP.library && APP.library.__index && !APP._fullReady && view.insertAdjacentHTML) {
-    view.insertAdjacentHTML('afterbegin', '<div class="lib-hint">词库详情加载中…本页数据会自动补全</div>');
+    view.insertAdjacentHTML('afterbegin', '<div class="lib-hint" id="libHint">词库详情加载中…本页数据会自动补全</div>');
   }
 }
 
@@ -10317,16 +10359,27 @@ function goto(page) {
     return;
   }
   const gen = ++_pageGen;
+  _libReadyCbs = []; // 换页：清空上一页注册的「核心到货自刷新」回调
   _renderPage(page);
   refreshHeader();
   // 分层补正：core / extra 到货后，若用户还停在本页、且渲染后没动过手，就重渲染一次把数据补全。
   // 之所以不阻塞渲染，是因为「等词库详情」在慢网下要几十秒 —— 让用户干等一个转圈是最差的选择。
   if (APP.library && APP.library.__index) {
     if (CORE_PAGES[page] && !APP._fullReady) {
-      ensureCore().then(() => { if (APP.page === page && _pageGen === gen && !_viewTouched) { _renderPage(page); refreshHeader(); } });
+      ensureCore().then(() => {
+        // 提示条必须无条件移除：用户点过页面后 _viewTouched 为真，原 !_viewTouched 门控会让它永驻。
+        const h = view && view.querySelector('#libHint'); if (h) h.remove();
+        // 核心数据到货：触发各模块根屏自刷新（绕过 touch 锁，修复「点过页面后永不自愈」）
+        fireLibReady();
+        if (APP.page === page && _pageGen === gen && !_viewTouched) { _renderPage(page); refreshHeader(); }
+      });
     }
     if (EXTRA_PAGES[page] && !APP._extraReady) {
-      ensureExtra().then(() => { if (APP.page === page && _pageGen === gen && !_viewTouched) { _renderPage(page); refreshHeader(); } });
+      ensureExtra().then(() => {
+        const h = view && view.querySelector('#libHint'); if (h) h.remove();
+        fireLibReady();
+        if (APP.page === page && _pageGen === gen && !_viewTouched) { _renderPage(page); refreshHeader(); }
+      });
     }
   }
 }
