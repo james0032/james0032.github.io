@@ -244,9 +244,18 @@ body {
 .btn.sm { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
 .btn.warn { background: var(--warn); color: #fff; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
-/* 听写中文选项：两列紧凑布局，10 选 1 仅占 5 行，无需下拉 */
-.opts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.opts-grid .opt { width: auto; margin-bottom: 0; padding: 11px 12px; font-size: 14px; }
+/* 10 选 1（英译中 / 听写中文选项）：两列紧凑网格，10 个选项只占 5 行，
+   手机端不再是「一列 10 行」的长列表。按钮等高（可点区 ≥50px）、左对齐、
+   长释义自动换行不撑破格子 → 排布整齐、翻页更短。 */
+.opts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch; }
+.opts-grid .opt { display: flex; align-items: center; width: auto; min-height: 50px; margin-bottom: 0; padding: 11px 13px; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; word-break: break-word; }
+.opts-grid .opt .meaning-lines { gap: 2px; }
+.opts-grid .opt .meaning-line { font-size: 15px; }
+@media (max-width: 420px) {
+  .opts-grid { gap: 7px; }
+  .opts-grid .opt { min-height: 48px; padding: 10px 11px; font-size: 14px; }
+  .opts-grid .opt .meaning-line { font-size: 14px; }
+}
 
 /* Stat grid */
 .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
