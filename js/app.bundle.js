@@ -1252,7 +1252,7 @@ function runStudy(view, ctx, words, title) {
             ${us ? `<span class="phon-tag us">美</span><span class="audio-btn mini" data-act="us" data-word="${escapeHtml(w.word)}">${IC.volumeSm}</span><span class="phon-us">${us}</span>` : ''}
           </div>
           <div class="hint mt">选出正确中文释义：</div>
-          <div id="opts">${q.options.map((o, i) => `<button class="opt" data-i="${i}">${formatMeaningHTML(o)}</button>`).join('')}</div>
+          <div id="opts" class="opts-grid">${q.options.map((o, i) => `<button class="opt" data-i="${i}">${formatMeaningHTML(o)}</button>`).join('')}</div>
           <div id="explain" class="example mt" style="display:none"></div>
         </div>`;
     } else if (q.type === 'zh2en') {
@@ -1508,7 +1508,7 @@ function runWordQuiz(ctx, view, words, title, opts = {}) {
             ${us ? `<span class="phon-tag us">美</span><span class="audio-btn mini" data-act="us" data-word="${escapeHtml(w.word)}">${IC.volumeSm}</span><span class="phon-us">${us}</span>` : ''}
           </div>
           <div class="hint mt">选出正确中文释义：</div>
-          <div id="opts">${q.options.map((o, i) => `<button class="opt" data-i="${i}">${formatMeaningHTML(o)}</button>`).join('')}</div>
+          <div id="opts" class="opts-grid">${q.options.map((o, i) => `<button class="opt" data-i="${i}">${formatMeaningHTML(o)}</button>`).join('')}</div>
           <div id="explain" class="example mt" style="display:none"></div>
         </div>`;
     } else if (q.type === 'zh2en') {
@@ -1684,6 +1684,9 @@ function runAiQuiz(ctx, view, opts) {
     const meta = stack.length
       ? (stack[stack.length - 1].title ? '· ' + stack[stack.length - 1].title : '')
       : '';
+    // 题头标签（蓝色小字）：调用方可以传 label:()=>'' 主动隐藏（如「单词应用」，
+    // 题库里含「看中文选英文」的题，题头写出英文原词会直接暴露答案）
+    const lb = label(it);
     view.innerHTML = `
       <div class="aiq-top">
         <button class="aiq-back" id="aiBack">‹ 返回</button>
@@ -1692,7 +1695,7 @@ function runAiQuiz(ctx, view, opts) {
       </div>
       ${stack.length ? `<button class="btn gray block mt" id="aiUp">↑ 返回上一级（${esc(meta)}）</button>` : ''}
       <div class="card mt">
-        <div class="aiq-meta">${esc(label(it))}</div>
+        ${lb ? `<div class="aiq-meta">${esc(lb)}</div>` : ''}
         <div class="aiq-q">${esc(it.q)}</div>
         <div id="aiOpts">
           ${['A', 'B', 'C', 'D'].map((k) => `<button class="opt" data-k="${k}">${esc(it.options[k])}</button>`).join('')}
@@ -6298,7 +6301,7 @@ const __mod_parent = (function () {
 
 
 
-// 阅读列表的「级别选择」状态（小学 / 初中 / 高中 / 英语故事）：模块级变量 + localStorage，
+// 阅读列表的「级别选择」状态（小学 / 初中 / 高中 / 拓展故事）：模块级变量 + localStorage，
 // 这样从文章「返回」列表、或下次再进阅读记，都停在上次选的级别上。
 const LV_KEY = 'hv_reading_level';
 let _lvSel = (() => { try { return localStorage.getItem(LV_KEY) || null; } catch (e) { return null; } })();
@@ -6328,7 +6331,7 @@ const readingMod = {
       return;
     }
     // 按 group 分组（小学 / 初中 / 高中 / 其他），组内保持原顺序；data-idx 为全局索引，供点击打开
-    // 级别分桶（group + level）：小学·入门 / 初中·进阶 / 高中·挑战 / 英语故事·未分级。
+    // 级别分桶（group + level）：小学·入门 / 初中·进阶 / 高中·挑战 / 拓展故事·未分级。
     // 190 篇一次性平铺太长 → 顶部先给「级别选择按钮」，点选后才列出该级别的文章题目。
     const LV_ORDER = ['小学', '初中', '高中', '其他'];
     const lvOrd = (g) => { const i = LV_ORDER.indexOf(g); return i < 0 ? LV_ORDER.length : i; };
@@ -6341,14 +6344,14 @@ const readingMod = {
       b.idxs.push(i);
     });
     const levels = [...lvMap.values()].sort((a, b) => lvOrd(a.group) - lvOrd(b.group));
-    const lvName = (lv) => (lv.group === '其他' ? '英语故事' : lv.group);
+    const lvName = (lv) => (lv.group === '其他' ? '拓展故事' : lv.group);
     const lvSub = (lv) => lv.level || (lv.group === '其他' ? '未分级' : '分级阅读');
     const lvIcon = (lv) => (lv.group === '小学' ? '🌱' : lv.group === '初中' ? '🌿' : lv.group === '高中' ? '🌳' : '📖');
     const lvTitle = (lv) => lvName(lv) + ' · ' + lvSub(lv) + '（' + lv.idxs.length + ' 篇）';
     const sel = levels.find((l) => l.key === _lvSel) || null;   // 未选级别 → 只显示按钮与引导
 
     view.innerHTML = `
-      <div class="section-title"><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>阅读记 · 英语故事</div>
+      <div class="section-title"><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>阅读记 · 拓展故事</div>
       <div class="lv-bar">
         ${levels.map((lv) => `
           <button class="lv-btn ${sel && sel.key === lv.key ? 'on' : ''}" data-lv="${escapeHtml(lv.key)}" type="button">
@@ -6499,12 +6502,28 @@ function highlightWordObjects(reading, ctx) {
   return res;
 }
 
+/**
+ * 文章标题拆成「英文主标题 + 中文副标题」两行。
+ * 分级阅读（Passage 61–190）的旧数据把中文并进了 title（如「A Trip to the Desert 沙漠之旅」）
+ * 且没有 titleCn，这里按「首个中文字符」拆开，统一成与 Passage 1–60 一致的两行样式。
+ */
+function splitReadingTitle(r) {
+  let en = String((r && r.title) || '').trim();
+  let cn = String((r && r.titleCn) || '').trim();
+  if (!cn) {
+    const m = en.match(/^([\s\S]*?)\s*([\u3400-\u4dbf\u4e00-\u9fff][\s\S]*)$/);
+    if (m) { en = m[1].trim(); cn = m[2].trim(); }
+  }
+  return { en: en, cn: cn };
+}
+
 function readingCard(r, i, ctx) {
   const hlCount = computeHighlights(r, ctx).length;
+  const t = splitReadingTitle(r);
   return `
     <div class="reading-card" data-idx="${i}">
-      <div class="rc-title">${escapeHtml(r.title)}</div>
-      ${r.titleCn ? `<div class="rc-sub">${escapeHtml(r.titleCn)}</div>` : ''}
+      <div class="rc-title">${escapeHtml(t.en)}</div>
+      ${t.cn ? `<div class="rc-sub">${escapeHtml(t.cn)}</div>` : ''}
       <div class="rc-meta">Passage ${r.id || i + 1} · ${hlCount} 个高亮词${r.wordCount ? ` · ${r.wordCount} 词` : ''}</div>
     </div>`;
 }
@@ -6788,10 +6807,11 @@ function renderOverview(view, ctx, reading, setMode) {
   const transHtml = reading.translation ? tokenizeText(reading.translation, []) : '';
   const expansion = (reading.expansion || []).map(expChip).join('');
   const extra = (reading.extra || []).map(expChip).join('');
+  const rt = splitReadingTitle(reading);
   view.innerHTML = `
     <div class="card">
-      <div class="between"><h2><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>${escapeHtml(reading.title)}</h2><button class="btn sm ghost" id="back">返回</button></div>
-      ${reading.titleCn ? `<div class="rc-sub" style="margin-bottom:10px">${escapeHtml(reading.titleCn)}</div>` : ''}
+      <div class="between"><h2><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>${escapeHtml(rt.en)}</h2><button class="btn sm ghost" id="back">返回</button></div>
+      ${rt.cn ? `<div class="rc-sub" style="margin-bottom:10px">${escapeHtml(rt.cn)}</div>` : ''}
       ${modeBar('overview', setMode, reading)}
     </div>
     <div class="card reading-overview">
@@ -6950,9 +6970,11 @@ function renderGuide(view, ctx, reading, setMode) {
       <div class="rsent-en">${tokenizeText(s.en, hls)}</div>
       ${s.cn ? `<div class="rsent-cn">${escapeHtml(s.cn)}</div>` : ''}
     </div>`).join('');
+  const rt = splitReadingTitle(reading);
   view.innerHTML = `
     <div class="card">
-      <div class="between"><h2><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>${escapeHtml(reading.title)}</h2><button class="btn sm ghost" id="back">返回</button></div>
+      <div class="between"><h2><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>${escapeHtml(rt.en)}</h2><button class="btn sm ghost" id="back">返回</button></div>
+      ${rt.cn ? `<div class="rc-sub" style="margin-bottom:10px">${escapeHtml(rt.cn)}</div>` : ''}
       ${modeBar('guide', setMode, reading)}
     </div>
     <div class="reading-guide">${items}</div>
@@ -7106,7 +7128,7 @@ function renderEn2Zh(view, ctx, reading, setMode) {
           ${us ? `<span class="phon-tag us">美</span><span class="audio-btn mini" data-act="us" data-word="${escapeHtml(e.word)}">${IC.volumeSm}</span><span class="phon-us">${us}</span>` : ''}
         </div>
         <div class="hint mt">选出正确中文释义：</div>
-        <div id="opts">${options.map((o, i) => `<button class="opt" data-i="${i}">${formatMeaningHTML(o)}</button>`).join('')}</div>
+        <div id="opts" class="opts-grid">${options.map((o, i) => `<button class="opt" data-i="${i}">${formatMeaningHTML(o)}</button>`).join('')}</div>
         <div id="explain" class="example mt" style="display:none"></div>
       </div>
     `;
@@ -7298,10 +7320,12 @@ function renderApply(view, ctx, reading, setMode) {
       return;
     }
     runAiQuiz(ctx, view, {
-      title: '单词应用 · ' + (reading.title || '阅读记'),
+      title: '单词应用 · ' + (splitReadingTitle(reading).en || '阅读记'),
       backPage: 'reading',
       questions: items,
-      label: (it) => '单词：' + (it.word || it.kp),
+      // 不显示左上角蓝色「单词：xxx」标签 —— 单词练题库里含「看中文选英文」的题，
+      // 直接把英文原词写在题头会暴露答案（题干本身已给出足够信息）。
+      label: () => '',
       shouldSkip: () => false,
       preOf: (it) => (it.pre && it.pre !== '无') ? (data.items || []).filter((x) => x.kp === it.pre) : null,
       relatedOf: (it) => (data.items || []).filter((x) => x.kp === it.kp && x.id !== it.id),
