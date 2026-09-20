@@ -506,7 +506,9 @@ const _ICONS = {
   fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
   volume: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
   volumeX: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M23 9l-6 6"/><path d="M17 9l6 6"/>',
-  puzzle: '<path d="M19 5a2.8 2.8 0 0 1 0 4h-3v3a2.8 2.8 0 0 1 0 4 2.8 2.8 0 0 1-4 0v-3H9v3a2.8 2.8 0 0 1-4 0 2.8 2.8 0 0 1 0-4h3V9H5a2.8 2.8 0 0 1 0-4 2.8 2.8 0 0 1 4 0v3h3V5a2.8 2.8 0 0 1 4 0v3h3V5z"/>',
+  // 原始路径仅在 24 视口内占据约 5~19，视觉偏小；以原中心(12,10.5)放大 1.3 倍，
+  // 使其与 book/headphones/bookX 等 30px 图标视觉大小一致（原本约 65% 宽 → 约 85% 宽）。
+  puzzle: '<path transform="translate(12,10.5) scale(1.3) translate(-12,-10.5)" d="M19 5a2.8 2.8 0 0 1 0 4h-3v3a2.8 2.8 0 0 1 0 4 2.8 2.8 0 0 1-4 0v-3H9v3a2.8 2.8 0 0 1-4 0 2.8 2.8 0 0 1 0-4h3V9H5a2.8 2.8 0 0 1 0-4 2.8 2.8 0 0 1 4 0v3h3V5a2.8 2.8 0 0 1 4 0v3h3V5z"/>',
   bulb: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-7 7c0 2.5 1.5 4.5 3 6v2h8v-2c1.5-1.5 3-3.5 3-6a7 7 0 0 0-7-7z"/>',
   alert: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><path d="M12 16v2"/>',
@@ -2306,7 +2308,7 @@ const __mod_aiall = {
     view.innerHTML = `
       <div class="section-title">${IC.zap}AI 练</div>
       <div class="card">
-        <p class="hint">AI 练包含<b>语法练、单词练、听力练、错题练</b>四大专项，针对性强化薄弱环节。每答对一题奖励 1 星，答错自动进入错题练并可练前置 / 关联知识。</p>
+        <p class="hint">AI 练包含<b>语法练、单词练、听力练、错题练</b>四大专项，针对性强化薄弱环节。每答对一题得 1 星，答错的题会自动收入错题练。</p>
       </div>
       <div class="ai-menu">
         ${CARDS.map((c) => `
@@ -2379,11 +2381,11 @@ function grammarRenderMenu(view, APP, ctx, data) {
   const seg = GRAMMAR_STAGES.map((s) => `<button class="seg-btn ${s === gStage ? 'on' : ''}" data-st="${s}">${s}</button>`).join('');
 
   view.innerHTML = `
-    <div class="section-title">${IC.zap}语法练</div>
+    <div class="between"><h2>${IC.zap}语法练</h2><button class="btn sm ghost" id="back">返回 AI 练</button></div>
     <div class="card">
       <div class="seg">${seg}</div>
       <button class="btn block mt" id="aiComprehensive">${IC.rotateSm}AI 综合练（${gStage} 及更低级别随机组卷）</button>
-      <p class="hint">AI 综合练：在「${gStage}」及更低级别每个知识点随机抽 3 道未练过的题组卷；同一知识点连续答对 10 题后不再推送，答错的题会优先回练其前置与关联题。</p>
+      <p class="hint">AI 综合练：在所选及以下级别随机组卷；答错的题会优先回练其前置与关联题。</p>
     </div>
     <div class="section-title">${gStage} · 语法知识点（待练 ${kps.reduce((s, k) => s + k.pending, 0)}）</div>
     <div class="ai-kp-list">
@@ -2395,6 +2397,7 @@ function grammarRenderMenu(view, APP, ctx, data) {
     </div>`;
 
   view.querySelectorAll('.seg-btn').forEach((b) => b.onclick = () => { gStage = b.dataset.st; grammarRenderMenu(view, APP, ctx, data); });
+  const bk = view.querySelector('#back'); if (bk) bk.onclick = () => window.dispatchEvent(new CustomEvent('goto', { detail: 'aiall' }));
   view.querySelector('#aiComprehensive').onclick = () => grammarStartSession(view, APP, ctx, data, grammarBuildComprehensive(data, gStage), gStage + ' · AI 综合练');
   view.querySelectorAll('.ai-kp .btn').forEach((b) => b.onclick = () => {
     const kp = b.dataset.kp;
@@ -2505,7 +2508,7 @@ function wordRenderMenu(view, APP, ctx, data) {
   const cnt = ai.lastCount || 100;
 
   view.innerHTML = `
-    <div class="section-title">${IC.zap}单词练</div>
+    <div class="between"><h2>${IC.zap}单词练</h2><button class="btn sm ghost" id="back">返回 AI 练</button></div>
     <div class="card">
       <div class="seg">${seg}</div>
       <div class="num-row mt">
@@ -2514,10 +2517,11 @@ function wordRenderMenu(view, APP, ctx, data) {
         <span class="num-unit">题</span>
       </div>
       <button class="btn block mt" id="aiStart">${IC.rotateSm}开始练习</button>
-      <p class="hint">已掌握单词的题不推送；优先练「已训练」的单词，其中练过但答错的最优先。每答对 1 题 +1 星并更新该词 FSRS6 档状态。</p>
+      <p class="hint">已掌握的单词不再推送；优先练你练过但答错的词。每答对 1 题得 1 星。</p>
     </div>`;
 
   view.querySelectorAll('.seg-btn').forEach((b) => b.onclick = () => { wStage = b.dataset.st; wordRenderMenu(view, APP, ctx, data); });
+  const bk = view.querySelector('#back'); if (bk) bk.onclick = () => window.dispatchEvent(new CustomEvent('goto', { detail: 'aiall' }));
   view.querySelector('#aiStart').onclick = () => {
     const n = Math.min(2000, Math.max(10, Math.round(Number(view.querySelector('#aiCount').value) || 100)));
     ai.lastCount = n; ai.lastStage = wStage;
@@ -2609,16 +2613,17 @@ const __mod_aiwrong = {
     const items = Object.keys(w.items).map((k) => Object.assign({ _key: k }, w.items[k]));
     if (!items.length) {
       view.innerHTML = `
-        <div class="section-title">${IC.xSm}错题练</div>
+        <div class="between"><h2>${IC.xSm}错题练</h2><button class="btn sm ghost" id="back">返回 AI 练</button></div>
         <div class="card" style="text-align:center">
           <div style="font-size:40px">🎉</div>
           <div class="mt">暂无错题。在「语法练 / 单词练」中答错的题会自动收录到这里，方便集中攻克。</div>
         </div>`;
+      view.querySelector('#back').onclick = () => window.dispatchEvent(new CustomEvent('goto', { detail: 'aiall' }));
       return;
     }
     const today = w.today && w.today.date === wrongTodayKey() ? w.today : null;
     view.innerHTML = `
-      <div class="section-title">${IC.xSm}错题练</div>
+      <div class="between"><h2>${IC.xSm}错题练</h2><button class="btn sm ghost" id="back">返回 AI 练</button></div>
       <div class="card">
         <div class="stat-grid">
           <div class="stat"><div class="num">${items.length}</div><div class="lab">待练错题</div></div>
@@ -2626,8 +2631,9 @@ const __mod_aiwrong = {
           <div class="stat"><div class="num warn">${w.wrong || 0}</div><div class="lab">错题练习次数</div></div>
         </div>
         <button class="btn block mt" id="aiwStart">${IC.rotateSm}开始攻克错题（${items.length}）</button>
-        <p class="hint">答对 1 题 +1 星并更新 FSRS6 档；答对后该题从错题库移除。今日已练 ${today ? today.count : 0} 题。</p>
+        <p class="hint">答对 1 题得 1 星，答对后该题从错题库移除。今日已练 ${today ? today.count : 0} 题。</p>
       </div>`;
+    view.querySelector('#back').onclick = () => window.dispatchEvent(new CustomEvent('goto', { detail: 'aiall' }));
     view.querySelector('#aiwStart').onclick = () => {
       const sess = shuffle(items.slice());
       // 预加载两个题库，使「练前置 / 练关联」可正常定位到对应题组
@@ -2746,6 +2752,15 @@ const FREQ_TIERS = [
   { k: 'off', name: '榜外生词', desc: '未进入万词榜 · 专业/超纲词', test: () => true },
 ];
 const PICT_ICONS = { '动物与自然': '🐻', '食物与饮品': '🍎', '人物与身体': '🧑', '物品与工具': '🔧', '活动与运动': '⚽', '旅行与地点': '✈', '情感与表情': '😀', '符号': '🔣', '图标简笔': '🖍️', '义符': '🔤', '其他': '✨' };
+// 象形记错配修正：部分多义词首义项与助记图（emoji / vxiaozhi 图）所表义项不符，
+// 这里让象形记词卡改显「与配图一致的义项」，避免图(蝙蝠)与释义(球棒)打架。
+// 仅作用于象形记单词墙的短释义，不影响单词卡/学习等处的完整释义。
+const PICT_MEANING_OVERRIDE = {
+  bat: '蝙蝠', seal: '海豹', sloth: '树懒', bear: '熊', spring: '泉，泉水',
+  scale: '秤', puzzle: '拼图游戏', ruler: '尺子', food: '食物', corn: '玉米',
+  rice: '米饭', card: '纸牌', can: '罐头', watch: '手表', glass: '眼镜',
+  nail: '指甲', cane: '拐杖', straw: '吸管', speaker: '扬声器', bolt: '螺栓',
+};
 // 象形记总数：emoji 图记 + 线性图标简笔
 function pictTotal(tax) { return Object.keys(tax.pict || {}).length + Object.keys(tax.pictIcon || {}).length; }
 
@@ -2844,21 +2859,17 @@ const __mod_category = {
         : '<div class="card">词库暂无数据，请到「导入」添加单词。</div>';
       return;
     }
-    // 高中分单元：统计单元数与待练数
+    // 高中分单元：统计单元数、范围内单词数、待练数
     const hsGroups = hsUnitGroups(APP);
-    let hsUnits = 0, hsActive = 0;
+    let hsUnits = 0, hsActive = 0, hsScopeWords = 0;
     hsGroups.forEach((bk) => bk.units.forEach((u) => {
       hsUnits++;
-      hsActive += u.words.filter((w) => !isMastered(w.word) && ctx.inScope(w)).length;
+      const inScope = u.words.filter((w) => ctx.inScope(w));
+      hsScopeWords += inScope.length;
+      hsActive += inScope.filter((w) => !isMastered(w.word)).length;
     }));
-    // 专升本专项：统计已标注 zsb 的待练词数
-    let zsbActive = 0;
-    for (const w of words) {
-      if (w.zsb && !isMastered(w.word) && ctx.inScope(w)) zsbActive++;
-    }
     const TAX_CARDS = [
-      { kind: 'unit', icon: IC.bookSm, name: '单元记', desc: hsUnits + ' 个教材单元', badge: hsActive ? hsActive + ' 词待练' : '按册逐单元练' },
-      { kind: 'zsb', icon: '🎓', name: '专升本专项记', desc: '升本核心词汇', badge: zsbActive ? zsbActive + ' 词待练' : '暂无待练' },
+      { kind: 'unit', icon: IC.bookSm, name: '单元记', desc: hsScopeWords + ' 词', badge: hsActive ? hsActive + ' 词待练' : '按册逐单元练' },
       { kind: 'pict', icon: '🧩', name: '象形记', desc: '图像联想记忆', badge: '加载中…' },
       { kind: 'roots', icon: IC.bookOpenSm, name: '词根记', desc: '词根词缀拆词', badge: '加载中…' },
       { kind: 'freq', icon: IC.chartSm, name: '考频记', desc: '按考试词频分层', badge: '加载中…' },
@@ -2917,7 +2928,9 @@ const __mod_category = {
       if (!view.isConnected) return;
       // 象形记 / 词根记：与所选词书、难度联动（此前用全库总数，选定词书后数字明显偏大）
       set('pict', pictScoped(tax, APP, ctx) + ' 词有图记');
-      set('roots', rootsScoped(tax, APP, ctx) + ' 组词根词缀');
+      // 词根记：显示范围内对应单词数（不再显示「组数」）
+      const rootsWordN = (tax.roots || []).reduce((s, g) => s + act(g.words).length, 0);
+      set('roots', rootsWordN + ' 词');
       // 考频分层：off 档应为「词库中未进入词频榜」的词。
       // 旧写法 off 档用 test:()=>true 去匹配 tax.freq 的条目 → 等于把全部有排名词也算了一遍，
       // 高频/常用/低频被重复计入，总数虚高近一倍（高考3500词实测 5488，正确值 2744）。
@@ -2928,8 +2941,10 @@ const __mod_category = {
         return act(ws).length;
       }).reduce((a, b) => a + b, 0);
       set('freq', fc + ' 词待练');
-      const sc = (tax.similar || []).filter((g) => act(g).length >= 2).length;
-      set('similar', sc + ' 组易混词');
+      // 相似记：显示范围内对应单词数（去重，不再显示「组数」）
+      const simSet = new Set();
+      (tax.similar || []).forEach((g) => g.forEach((w) => { const ww = m.get(String(w).toLowerCase()); if (ww && !isMastered(ww.word) && ctx.inScope(ww)) simSet.add(ww.word.toLowerCase()); }));
+      set('similar', simSet.size + ' 词');
     }).catch(() => {
       ['pict', 'roots', 'freq', 'similar'].forEach((k) => {
         const el = view.querySelector(`[data-taxbadge="${k}"]`);
@@ -2944,7 +2959,6 @@ function byWordIn(m, w) { return m.has(w); }
 /* ---------- 扩展子模块：单元记/象形记/词根记/考频记/相似记 ---------- */
 function openTaxSub(view, ctx, APP, kind) {
   if (kind === 'unit') return openHSUnits(view, ctx, APP);
-  if (kind === 'zsb') return renderZsb(view, ctx, APP);
   view.innerHTML = '<div class="card">分类数据加载中…</div>';
   loadTax().then((tax) => {
     if (!view.isConnected) return;
@@ -2956,43 +2970,6 @@ function openTaxSub(view, ctx, APP, kind) {
     view.innerHTML = '<div class="card">扩展分类数据加载失败，请通过服务器（而非本地文件）访问后重试。</div>';
   });
 }
-function renderZsb(view, ctx, APP) {
-  const back = backMain();
-  const zsbWords = (APP.library.words || []).filter((w) => w.zsb);
-  const groups = {};
-  for (const w of zsbWords) {
-    const L = (w.word && w.word[0] ? w.word[0] : '?').toUpperCase();
-    (groups[L] = groups[L] || []).push(w);
-  }
-  const letters = Object.keys(groups).sort((a, b) => a.localeCompare(b));
-  view.innerHTML = `
-    <div class="section-title">🎓专升本专项记 · ${zsbWords.length} 词</div>
-    <div class="card">
-      <div class="between"><h2>专升本核心词汇</h2><button class="btn sm ghost" id="back">返回分类</button></div>
-      <p class="hint" style="margin-top:4px">专升本英语词汇约 3500，对应「高中(高考) + 大学英语四级(CET-4)」水平。这里汇总词库中已标注的升本词汇，按首字母分组速记。</p>
-    </div>
-    <div class="cat-grid">
-      ${letters.map((L) => {
-        const all = groups[L];
-        const act = all.filter((w) => !isMastered(w.word) && ctx.inScope(w));
-        return `<div class="cat-card" data-letter="${L}">
-          <div class="c-name">${L}</div>
-          <div class="c-count">${all.length} 词</div>
-          <span class="badge">${act.length ? act.length + ' 待练' : '已掌握'}</span>
-        </div>`;
-      }).join('')}
-    </div>`;
-  view.querySelector('#back').onclick = back;
-  view.querySelectorAll('.cat-card[data-letter]').forEach((card) => {
-    card.addEventListener('click', () => {
-      const L = card.dataset.letter;
-      const act = groups[L].filter((w) => !isMastered(w.word) && ctx.inScope(w));
-      if (!act.length) { ctx.toast('该组在当前难度下暂无待练单词 🎉'); return; }
-      openCategory(view, ctx, `专升本 · ${L}`, act, () => renderZsb(view, ctx, APP));
-    });
-  });
-  view.scrollTop = 0;
-}
 function backMain() { return () => window.dispatchEvent(new CustomEvent('goto', { detail: 'category' })); }
 
 function renderRoots(view, ctx, APP, tax, filter) {
@@ -3000,10 +2977,10 @@ function renderRoots(view, ctx, APP, tax, filter) {
   const types = [['all', '全部'], ['pre', '前缀'], ['root', '词根'], ['suf', '后缀']];
   const list = (tax.roots || []).filter((g) => filter === 'all' || !filter || g.t === filter);
   view.innerHTML = `
-    <div class="section-title">${IC.bookOpen}词根记 · ${list.length} 组</div>
+    <div class="section-title">${IC.bookOpen}词根记</div>
     <div class="card">
       <div class="between"><h2>词根词缀 · 拆词速记</h2><button class="btn sm ghost" id="back">返回分类</button></div>
-      <p class="hint" style="margin-top:4px">掌握一个词根 = 串记一族单词。数据来源：开源英语词根库（1061 条）精选 + 词库匹配。</p>
+      <p class="hint" style="margin-top:4px">掌握一个词根，就能串记一族单词；点词根进入对应单词列表。</p>
       <div class="reading-mode-bar" style="margin-top:8px">
         ${types.map(([k, n]) => `<button class="mode-btn ${filter === k ? 'on' : ''}" data-rt="${k}">${n}</button>`).join('')}
       </div>
@@ -3038,10 +3015,10 @@ function renderSimilar(view, ctx, APP, tax) {
     .map((g) => ({ g, act: resolveWords(APP, g).filter((w) => !isMastered(w.word) && ctx.inScope(w)) }))
     .filter((x) => x.act.length >= 2);
   view.innerHTML = `
-    <div class="section-title">${IC.target}相似记 · ${groups.length} 组易混词</div>
+    <div class="section-title">${IC.target}相似记</div>
     <div class="card">
       <div class="between"><h2>相似词 · 对比速记</h2><button class="btn sm ghost" id="back">返回分类</button></div>
-      <p class="hint" style="margin-top:4px">拼写只差一个字母的「双胞胎词」集中对比，一遍记牢、不再混淆（编辑距离算法自动聚类）。</p>
+      <p class="hint" style="margin-top:4px">拼写只差一个字母的「双胞胎词」集中对比，一遍记牢不混淆；点一组进入练习。</p>
     </div>
     <div class="cat-grid">
       ${groups.map(({ g, act }) => `
@@ -3081,7 +3058,7 @@ function renderFreq(view, ctx, APP, tax) {
     <div class="section-title">${IC.chart}考频记 · 按考试词频分层</div>
     <div class="card">
       <div class="between"><h2>考频分层 · 先啃高频词</h2><button class="btn sm ghost" id="back">返回分类</button></div>
-      <p class="hint" style="margin-top:4px">依据 Google 万词频榜（开源语料统计）为词库标注考频层级：排名越靠前，考试出现概率越高。</p>
+      <p class="hint" style="margin-top:4px">按考试出现频率分层，先练高频词效率更高；点层级进入对应单词。</p>
     </div>
     <div class="cat-grid">
       ${tiers.map((t) => `
@@ -3124,7 +3101,7 @@ function renderPictCats(view, ctx, APP, tax) {
     <div class="section-title">🧩象形记 · ${pictScoped(tax, APP, ctx)} 词有图记（当前学习范围）</div>
     <div class="card">
       <div class="between"><h2>象形图记 · 一图记一词</h2><button class="btn sm ghost" id="back">返回分类</button></div>
-      <p class="hint" style="margin-top:4px">为单词配一幅「心理图像」，图像联想是最古老的记忆术。图源：vxiaozhi AI 助记图（每个单词一张按词义精确生成的配图，已上线 word.vxiaozhi.com）优先，缺图时回退 Unicode emoji 与 Tabler/Phosphor 开源简笔图标。</p>
+      <p class="hint" style="margin-top:4px">给单词配一张助记图，看图联想更好记；点分类进入单词墙，可逐词闪记。</p>
     </div>
     <div class="cat-grid">
       ${cats.map((c) => `
@@ -3155,7 +3132,11 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   const totalPages = Math.max(1, Math.ceil(all.length / PAGE));
   if (page >= totalPages) page = totalPages - 1;
   const items = all.slice(page * PAGE, page * PAGE + PAGE);
-  const shortMeaning = (w) => { const x = m.get(w); return ((x && x.meaning) || '').split(/[；;]/)[0]; };
+  const shortMeaning = (w) => {
+    const lw = String(w).toLowerCase();
+    if (PICT_MEANING_OVERRIDE[lw]) return PICT_MEANING_OVERRIDE[lw];
+    const x = m.get(lw); return ((x && x.meaning) || '').split(/[；;]/)[0];
+  };
   const imgHTML = (w, v) => {
     if (isIconCat) return iconSvg(v);                 // 图标简笔模块：保留 SVG 简笔（本身就是简笔画）
     const em = escapeHtml((v && v[0]) || '🔤');        // 表情图兜底
@@ -3175,7 +3156,7 @@ function renderPictGrid(view, ctx, APP, tax, cat, page) {
   view.innerHTML = `
     <div class="section-title">🧩象形记 · ${escapeHtml(cat)}（${all.length} 词）</div>
     <div class="card"><div class="between"><h2>${PICT_ICONS[cat] || '✨'} ${escapeHtml(cat)}</h2><button class="btn sm ghost" id="back">返回</button></div>
-    <p class="hint" style="margin-top:4px">${isMeanCat ? '含义联想：用单词中文释义里的关键词配 emoji，建立图像关联（本地生成，不联网）。' : '点击任意词卡进入闪记；点「全部闪记」从该分类第一个词开始过词。单词优先显示 vxiaozhi AI 助记图（按词义精确生成），无图时回退 emoji。'}每页 ${PAGE} 词，可翻页浏览。</p></div>
+    <p class="hint" style="margin-top:4px">${isMeanCat ? '用单词释义里的关键词配 emoji 建立图像关联。' : '点词卡进入闪记，或点「全部闪记」连过本分类全部词。'}每页 ${PAGE} 词，可翻页。</p></div>
     ${totalPages > 1 ? pager('top') : ''}
     <div class="pict-grid">
       ${items.map(([w, v]) => `
@@ -4708,7 +4689,7 @@ function renderList({ view }) {
   view.innerHTML = `
     ${renderStrategyCard()}
     ${renderOverviewCard()}
-    <div class="section-title"><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-3a9 9 0 0 1 18 0v3"/><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Z"/><path d="M21 14h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-5Z"/></svg>听力真题 · 2024 高考</div>
+    <div class="between"><h2><svg class="vico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-3a9 9 0 0 1 18 0v3"/><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Z"/><path d="M21 14h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-5Z"/></svg>听力真题 · 2024 高考</h2><button class="btn sm ghost" id="back">返回 AI 练</button></div>
     <div class="card">
       <div class="hint">共 ${papers.length} 套真题，每套 20 题。3 种训练模式，建议先「精听」找盲区，再「实战模考」计时演练。</div>
     </div>
@@ -4761,6 +4742,8 @@ function renderList({ view }) {
     </div>
   `;
   // 折叠交互
+  const bk = view.querySelector('#back');
+  if (bk) bk.onclick = () => window.dispatchEvent(new CustomEvent('goto', { detail: 'aiall' }));
   const head = view.querySelector('#stratHead');
   const body = view.querySelector('.lst-strategy-body');
   if (head && body) {
